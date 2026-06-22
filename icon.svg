@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="104" fill="#2E3440"/>
+  <!-- Builder / runner: a gear with a run (play) glyph -->
+  <g transform="translate(216 222)">
+    <g fill="#81A1C1">
+      <rect x="-30" y="-208" width="60" height="80" rx="14"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(45)"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(90)"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(135)"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(180)"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(225)"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(270)"/>
+      <rect x="-30" y="-208" width="60" height="80" rx="14" transform="rotate(315)"/>
+    </g>
+    <circle r="156" fill="#81A1C1"/>
+    <circle r="96" fill="#2E3440"/>
+    <path d="M-30 -52 L58 2 L-30 56 Z" fill="#FF6600"/>
+  </g>
+  <!-- Forgejo badge, bottom-right corner -->
+  <g transform="translate(380 380)">
+    <circle r="120" fill="#2E3440"/>
+    <circle r="106" fill="#ECEFF4"/>
+    <g transform="scale(0.86) translate(-106 -106)" fill="none" stroke-linecap="round">
+      <path d="M58 168V70a50 50 0 0 1 50-50h20" stroke="#FF6600" stroke-width="25"/>
+      <path d="M58 168v-30a50 50 0 0 1 50-50h20" stroke="#D40000" stroke-width="25"/>
+      <circle cx="142" cy="20" r="18" stroke="#FF6600" stroke-width="15"/>
+      <circle cx="142" cy="88" r="18" stroke="#D40000" stroke-width="15"/>
+      <circle cx="58" cy="180" r="18" stroke="#D40000" stroke-width="15"/>
+    </g>
+  </g>
+</svg>
