@@ -12,14 +12,14 @@ export const MIN_CPU_CORES = 2
 // on the internal StartOS network here (see forgejo-startos interfaces/utils).
 export const LOCAL_FORGE_URL = 'http://forgejo.startos:3000'
 
+// ---- Emulation ----
+// Image advertised by the "Enable Emulation" toggle, pinned to the foreign
+// platform (via forgejo-runner's `?platform=` label option) so its jobs run
+// under StartOS's host QEMU binfmt. The multi-arch catthehacker default.
+export const EMULATION_IMAGE = 'ghcr.io/catthehacker/ubuntu:act-22.04'
+
 // ---- Paths (inside the service container) ----
 export const DATA_DIR = '/data'
-// Persist Podman's layer store on the data volume so job images survive
-// restarts instead of being re-pulled every boot.
-export const PODMAN_ROOT = '/data/containers/storage'
-// Registration state written by `forgejo-runner register`; its presence is how
-// we make registration idempotent across restarts.
-export const RUNNER_STATE = '/data/.runner'
 
 export const mount = sdk.Mounts.of().mountVolume({
   volumeId: 'main',

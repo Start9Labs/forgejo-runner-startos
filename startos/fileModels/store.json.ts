@@ -3,14 +3,19 @@ import { sdk } from '../sdk'
 
 const shape = z
   .object({
-    registrationToken: z.string().catch(''),
-    runnerName: z.string().catch(''),
+    // Forgejo v12 connection-model credentials: the runner UUID + token shown on
+    // the "Create new Runner" screen. These are declared into config.yaml's
+    // server.connections block by the entrypoint — `register` is deprecated.
+    runnerUuid: z.string().catch(''),
+    runnerToken: z.string().catch(''),
     // forgejo-runner label syntax: "<name>:docker://<image>" or "<name>:host".
-    // Add foreign-arch labels here to also serve emulated jobs (slow — see README).
     labels: z
       .string()
       .catch('ubuntu-latest:docker://ghcr.io/catthehacker/ubuntu:act-22.04'),
     capacity: z.number().int().catch(1),
+    // When true, also advertise a foreign-arch label (pinned via `?platform=`)
+    // so this runner serves emulated jobs for the other CPU architecture.
+    emulation: z.boolean().catch(false),
   })
   .strip()
 

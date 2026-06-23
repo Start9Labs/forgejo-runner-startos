@@ -1,9 +1,10 @@
-import { cpus, totalmem } from 'os'
+import { arch, cpus, totalmem } from 'os'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { storeJson } from './fileModels/store.json'
 import {
   DATA_DIR,
+  EMULATION_IMAGE,
   LOCAL_FORGE_URL,
   MIN_CPU_CORES,
   MIN_MEMORY_BYTES,
@@ -24,8 +25,24 @@ export const main = sdk.setupMain(async ({ effects }) => {
   const store = await storeJson.read().const(effects)
   if (!store) throw new Error(i18n('Store not found'))
 
-  // Local-only: the runner always registers against the Forgejo on this device.
-  const configured = !!store.registrationToken
+  // The connection is declared in config.yaml from these credentials, so having
+  // both is the configured signal — `register` is gone, hence no `.runner`.
+  const configured = !!(store.runnerUuid && store.runnerToken)
+
+  // Emulation: also advertise a label for the other CPU architecture, pinned to
+  // that platform via forgejo-runner's `?platform=` option so its jobs run under
+  // StartOS's host QEMU binfmt. The runner process itself is always native.
+  const foreignArch = arch() === 'arm64' ? 'amd64' : 'arm64'
+  const labels = [
+    ...store.labels.split(',').map((l) => l.trim()),
+    ...(store.emulation
+      ? [
+          `linux-${foreignArch}:docker://${EMULATION_IMAGE}?platform=linux/${foreignArch}`,
+        ]
+      : []),
+  ]
+    .filter(Boolean)
+    .join(',')
 
   const subcontainer = await sdk.SubContainer.of(
     effects,
@@ -57,17 +74,17 @@ export const main = sdk.setupMain(async ({ effects }) => {
         user: 'app',
         env: {
           INSTANCE_URL: LOCAL_FORGE_URL,
-          RUNNER_TOKEN: store.registrationToken,
-          RUNNER_NAME: store.runnerName || 'startos-runner',
-          RUNNER_LABELS: store.labels,
+          RUNNER_UUID: store.runnerUuid,
+          RUNNER_TOKEN: store.runnerToken,
+          RUNNER_LABELS: labels,
+          RUNNER_CAPACITY: String(store.capacity),
           XDG_RUNTIME_DIR: `${DATA_DIR}/runner/run`,
         },
       },
       ready: {
         display: i18n('Runner'),
         gracePeriod: 60000,
-        // Poll slowly: an unconfigured runner is a steady state, not a flapping
-        // one, so there's no need to re-check (and log) every second.
+        // Poll slowly — configuration state is steady, not flapping.
         trigger: sdk.trigger.cooldownTrigger(30000),
         fn: async () =>
           configured

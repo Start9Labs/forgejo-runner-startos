@@ -16,13 +16,14 @@ export const long = {
   pl_PL:
     'Forgejo Runner wykonuje przepływy pracy Forgejo Actions dla instancji Forgejo na tym urządzeniu, uruchamiając każde zadanie w izolowanym, bezrootowym kontenerze OCI. Publikowane na licencji MIT.',
   fr_FR:
-    'Forgejo Runner exécute les workflows Forgejo Actions pour l\'instance Forgejo sur cet appareil, en lançant chaque tâche dans un conteneur OCI isolé et sans privilèges root. Publié sous la licence MIT.',
+    "Forgejo Runner exécute les workflows Forgejo Actions pour l'instance Forgejo sur cet appareil, en lançant chaque tâche dans un conteneur OCI isolé et sans privilèges root. Publié sous la licence MIT.",
 }
 
 export const dependencyDescription = {
   en_US: 'The Forgejo instance on this device that this runner serves.',
-  es_ES: 'La instancia de Forgejo en este dispositivo a la que sirve este ejecutor.',
+  es_ES:
+    'La instancia de Forgejo en este dispositivo a la que sirve este ejecutor.',
   de_DE: 'Die Forgejo-Instanz auf diesem Gerät, die dieser Runner bedient.',
   pl_PL: 'Instancja Forgejo na tym urządzeniu, którą obsługuje ten runner.',
-  fr_FR: 'L\'instance Forgejo sur cet appareil que ce runner dessert.',
+  fr_FR: "L'instance Forgejo sur cet appareil que ce runner dessert.",
 }

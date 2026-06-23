@@ -1,29 +1,31 @@
 import { i18n } from '../i18n'
 import { sdk } from '../sdk'
-import { mount } from '../utils'
 import { storeJson } from '../fileModels/store.json'
 
 const { InputSpec, Value } = sdk
 
 const inputSpec = InputSpec.of({
-  registrationToken: Value.text({
-    name: i18n('Registration Token'),
+  runnerUuid: Value.text({
+    name: i18n('Runner UUID'),
     description: i18n(
-      'A runner registration token from the Forgejo instance, under Site/Org/Repo Settings → Actions → Runners → Create new Runner.',
+      'The runner UUID shown by Forgejo when you create a runner, under Site/Org/Repo Settings → Actions → Runners → Create new Runner.',
     ),
     required: true,
     default: null,
   }),
-  runnerName: Value.text({
-    name: i18n('Runner Name'),
-    description: i18n('A name to identify this runner in the Forgejo UI.'),
-    required: false,
-    default: 'startos-runner',
+  runnerToken: Value.text({
+    name: i18n('Runner Token'),
+    description: i18n(
+      'The runner token shown alongside the UUID on the same Forgejo "Create new Runner" screen.',
+    ),
+    required: true,
+    default: null,
+    masked: true,
   }),
   labels: Value.text({
     name: i18n('Labels'),
     description: i18n(
-      'Comma-separated runner labels — syntax "name:docker://image" or "name:host". Adding a foreign-arch label also serves emulated jobs, which are much slower; prefer a native runner per architecture.',
+      'Comma-separated runner labels — syntax "name:docker://image" or "name:host". For foreign-architecture jobs use the Enable Emulation toggle instead of adding arch labels by hand.',
     ),
     required: false,
     default: 'ubuntu-latest:docker://ghcr.io/catthehacker/ubuntu:act-22.04',
@@ -36,6 +38,13 @@ const inputSpec = InputSpec.of({
     min: 1,
     integer: true,
   }),
+  emulation: Value.toggle({
+    name: i18n('Enable Emulation'),
+    description: i18n(
+      'Also serve jobs for the other CPU architecture, run under emulation (much slower than native). Appends a foreign-architecture label pinned to that platform; prefer a native runner per architecture for regular builds.',
+    ),
+    default: false,
+  }),
 })
 
 export const configure = sdk.Action.withInput(
@@ -44,7 +53,7 @@ export const configure = sdk.Action.withInput(
   async ({ effects }) => ({
     name: i18n('Configure'),
     description: i18n(
-      'Register this runner with the Forgejo on this device. Saving re-registers on the next restart, so provide a fresh registration token each time.',
+      'Connect this runner to the Forgejo on this device. Saving applies on the next restart.',
     ),
     warning: null,
     allowedStatuses: 'any',
@@ -58,38 +67,28 @@ export const configure = sdk.Action.withInput(
     const s = await storeJson.read().const(effects)
     if (!s) return null
     return {
-      registrationToken: s.registrationToken || undefined,
-      runnerName: s.runnerName || null,
+      runnerUuid: s.runnerUuid || undefined,
+      runnerToken: s.runnerToken || undefined,
       labels: s.labels,
       capacity: s.capacity,
+      emulation: s.emulation,
     }
   },
 
   async ({ effects, input }) => {
     await storeJson.merge(effects, {
-      registrationToken: input.registrationToken ?? '',
-      runnerName: input.runnerName ?? '',
+      runnerUuid: input.runnerUuid ?? '',
+      runnerToken: input.runnerToken ?? '',
       labels: input.labels ?? '',
       capacity: input.capacity,
+      emulation: input.emulation,
     })
-
-    // Drop the registration state so the runner re-registers with the new
-    // settings (and the freshly supplied token) on the next start.
-    await sdk.SubContainer.withTemp(
-      effects,
-      { imageId: 'main' },
-      mount,
-      'reset-registration',
-      async (sub) => {
-        await sub.exec(['rm', '-f', '/data/runner/.runner'])
-      },
-    )
 
     return {
       version: '1',
       title: i18n('Saved'),
       message: i18n(
-        'Runner configuration saved. Restart the service to (re)register with these settings.',
+        'Runner configuration saved. Restart the service to apply.',
       ),
       result: null,
     }
