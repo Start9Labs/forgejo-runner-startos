@@ -1,11 +1,14 @@
 import { arch, cpus, totalmem } from 'os'
+import {
+  httpInterfaceId,
+  mainHostId as forgejoHostId,
+} from 'forgejo-startos/startos/utils'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { storeJson } from './fileModels/store.json'
 import {
   DATA_DIR,
   EMULATION_IMAGE,
-  LOCAL_FORGE_URL,
   MIN_CPU_CORES,
   MIN_MEMORY_BYTES,
   mount,
@@ -24,6 +27,36 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
   const store = await storeJson.read().const(effects)
   if (!store) throw new Error(i18n('Store not found'))
+
+  // The runner connects to its Forgejo dependency over the internal LXC bridge.
+  // Resolve Forgejo's `http` interface to its stable bridge URL once, outside the
+  // daemon chain; `.const()` re-runs main only if that binding is added/removed,
+  // so the daemon env gets a plain string instead of the retired `forgejo.startos`
+  // DNS name (which made the runner watch the Tor/DNS layer).
+  const forgeUrl = await sdk.host
+    .get(
+      effects,
+      { hostId: forgejoHostId, packageId: 'forgejo' },
+      (host) => {
+        const iface =
+          host &&
+          Object.values(host.bindings)
+            .flatMap((b) => Object.values(b.interfaces))
+            .find((i) => i.id === httpInterfaceId)
+        return iface
+          ? iface.addressInfo
+              .filter({ kind: 'bridge', predicate: (h) => !h.ssl })
+              .format('urlstring')[0]
+          : undefined
+      },
+    )
+    .const()
+  if (!forgeUrl)
+    throw new Error(
+      i18n(
+        'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
+      ),
+    )
 
   // The connection is declared in config.yaml from these credentials, so having
   // both is the configured signal — `register` is gone, hence no `.runner`.
@@ -44,7 +77,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     .filter(Boolean)
     .join(',')
 
-  const subcontainer = await sdk.SubContainer.of(
+  const subcontainer = sdk.SubContainer.of(
     effects,
     { imageId: 'main' },
     mount,
@@ -73,7 +106,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
         command: ['/usr/local/bin/entrypoint.sh'],
         user: 'app',
         env: {
-          INSTANCE_URL: LOCAL_FORGE_URL,
+          INSTANCE_URL: forgeUrl,
           RUNNER_UUID: store.runnerUuid,
           RUNNER_TOKEN: store.runnerToken,
           RUNNER_LABELS: labels,

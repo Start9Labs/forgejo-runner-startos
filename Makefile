@@ -3,4 +3,4 @@
 # riscv. (Foreign-arch *jobs* are still built via the host's qemu binfmt; this
 # is only about which arches the runner package itself runs on.)
 ARCHES := x86 arm
-include s9pk.mk
+include node_modules/@start9labs/start-sdk/s9pk.mk

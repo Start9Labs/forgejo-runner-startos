@@ -7,11 +7,6 @@ import { sdk } from './sdk'
 export const MIN_MEMORY_BYTES = 2 * 1024 ** 3 // 2 GiB
 export const MIN_CPU_CORES = 2
 
-// ---- Local forge ----
-// When the runner is pointed at a Forgejo on this same device, it's reachable
-// on the internal StartOS network here (see forgejo-startos interfaces/utils).
-export const LOCAL_FORGE_URL = 'http://forgejo.startos:3000'
-
 // ---- Emulation ----
 // Image advertised by the "Enable Emulation" toggle, pinned to the foreign
 // platform (via forgejo-runner's `?platform=` label option) so its jobs run

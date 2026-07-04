@@ -28,8 +28,10 @@ export const manifest = setupManifest({
     },
   },
   // Run a rootless Podman engine inside the service to sandbox each CI job.
-  // SDK 1.5.3's nestedRuntime is the combined flag that SDK 2.0 later split
-  // into userspaceFilesystems (/dev/fuse) + virtualNetworking (/dev/net/tun,
-  // CAP_NET_ADMIN). See start-docs recipe-nested-oci-runtime.
-  nestedRuntime: true,
+  // It needs both device grants the former nestedRuntime flag bundled:
+  // userspaceFilesystems for /dev/fuse (fuse-overlayfs storage) and
+  // virtualNetworking for /dev/net/tun (slirp4netns job networking).
+  // See start-docs recipe-nested-oci-runtime.
+  userspaceFilesystems: true,
+  virtualNetworking: true,
 })
