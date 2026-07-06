@@ -1,12 +1,13 @@
 import { arch, cpus, totalmem } from 'os'
 import {
-  httpInterfaceId,
   mainHostId as forgejoHostId,
+  uiPort,
 } from 'forgejo-startos/startos/utils'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { storeJson } from './fileModels/store.json'
 import {
+  bridgeAddress,
   DATA_DIR,
   EMULATION_IMAGE,
   MIN_CPU_CORES,
@@ -29,34 +30,23 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (!store) throw new Error(i18n('Store not found'))
 
   // The runner connects to its Forgejo dependency over the internal LXC bridge.
-  // Resolve Forgejo's `http` interface to its stable bridge URL once, outside the
-  // daemon chain; `.const()` re-runs main only if that binding is added/removed,
-  // so the daemon env gets a plain string instead of the retired `forgejo.startos`
-  // DNS name (which made the runner watch the Tor/DNS layer).
-  const forgeUrl = await sdk.host
-    .get(
-      effects,
-      { hostId: forgejoHostId, packageId: 'forgejo' },
-      (host) => {
-        const iface =
-          host &&
-          Object.values(host.bindings)
-            .flatMap((b) => Object.values(b.interfaces))
-            .find((i) => i.id === httpInterfaceId)
-        return iface
-          ? iface.addressInfo
-              .filter({ kind: 'bridge', predicate: (h) => !h.ssl })
-              .format('urlstring')[0]
-          : undefined
-      },
-    )
-    .const()
-  if (!forgeUrl)
+  // `bridgeAddress` maps Forgejo's `http` binding to `<os ip>:<assigned port>`,
+  // read off the port's `assignedPort` rather than the interface hostname, so it
+  // holds steady across Forgejo updates/restarts; `.const()` re-runs main only
+  // when the address itself changes (Forgejo install/uninstall/port-change),
+  // never on churn. A null (Forgejo absent) surfaces the friendly guard below.
+  const forgeBridge = await bridgeAddress(effects, {
+    packageId: 'forgejo',
+    hostId: forgejoHostId,
+    internalPort: uiPort,
+  }).const()
+  if (!forgeBridge)
     throw new Error(
       i18n(
         'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
       ),
     )
+  const forgeUrl = `http://${forgeBridge}`
 
   // The connection is declared in config.yaml from these credentials, so having
   // both is the configured signal — `register` is gone, hence no `.runner`.

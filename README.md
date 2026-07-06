@@ -69,7 +69,7 @@ Forgejo v12 deprecated the `forgejo-runner register` command in favor of the **c
 | Labels | "Configure" action — written into the `config.yaml` connection |
 | Concurrent jobs | "Configure" action — sets `runner.capacity` |
 | Enable Emulation | "Configure" action — appends a foreign-arch label (see [Job Execution and Multi-Arch](#job-execution-and-multi-arch)) |
-| Forge URL | Always the local Forgejo (`http://forgejo.startos:3000`) |
+| Forge URL | Resolved automatically to the local Forgejo's HTTP binding over the internal LXC bridge |
 
 ## Network Access and Interfaces
 
