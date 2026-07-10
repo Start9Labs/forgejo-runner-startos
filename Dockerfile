@@ -5,11 +5,13 @@ FROM code.forgejo.org/forgejo/runner:12.12.0 AS runner
 FROM debian:trixie-slim
 
 # Rootless Podman + its prerequisites (fuse-overlayfs storage, slirp4netns
-# networking). See start-docs recipe-nested-oci-runtime.
+# networking). See start-docs recipe-nested-oci-runtime. Also git: the runner
+# fetches `uses:` actions with the git CLI — without it every `uses:` step fails
+# at the action fetch (exec: "git": executable file not found in $PATH).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       podman fuse-overlayfs uidmap iproute2 iptables nftables aardvark-dns \
-      passt slirp4netns ca-certificates \
+      passt slirp4netns ca-certificates git \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
