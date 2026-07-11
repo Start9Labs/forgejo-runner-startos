@@ -25,3 +25,25 @@ Once it is online, Forgejo dispatches workflow jobs to it automatically — ther
 ### Labels and architecture
 
 A workflow's `runs-on:` is matched against the runner's labels. To also serve jobs built for the other CPU architecture, turn on **Enable Emulation** in **Configure** — it adds a label for that architecture and runs its jobs under emulation. They work, but are much slower than native, so prefer a separate runner on native hardware for each architecture you build for regularly.
+
+### First run
+
+The first job on each label pulls its container image before anything else runs — the default
+`ubuntu-latest` image is about 1 GB, so **Set up job** can sit for a minute or two showing only a
+spinner. The image is cached afterward; later runs start in seconds.
+
+### Checking out your repository
+
+To check out the repository a workflow belongs to, use the standard action — it authenticates
+automatically with the job's token, so private repositories work with no extra setup:
+
+```yaml
+- uses: actions/checkout@v4
+```
+
+To clone in a plain `run:` step instead, authenticate with the job's token; the in-job clone URL
+is anonymous by default and fails on private repositories:
+
+```yaml
+- run: git clone "http://ci:${{ github.token }}@${GITHUB_SERVER_URL#*://}/${GITHUB_REPOSITORY}.git" .
+```

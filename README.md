@@ -35,7 +35,7 @@
 
 | Aspect | Standard install | StartOS |
 |---|---|---|
-| Image | The `forgejo-runner` binary plus a Docker/Podman socket you supply | Custom image: Debian + rootless **Podman**, with the `forgejo-runner` binary copied from the official `code.forgejo.org/forgejo/runner` image |
+| Image | The `forgejo-runner` binary plus a Docker/Podman socket you supply | Custom image: Debian + rootless **Podman** and **git** (used to fetch `uses:` actions), with the `forgejo-runner` binary copied from the official `code.forgejo.org/forgejo/runner` image |
 | Architectures | depends on host | x86_64, aarch64 |
 | Job engine | an external Docker/Podman daemon you wire up | a rootless Podman engine bundled inside the service (`nestedRuntime`) |
 | Entrypoint | `forgejo-runner daemon` | a wrapper that starts the Podman socket, declares the forge connection in `config.yaml` (the v12 connection model), then runs `forgejo-runner daemon` |
@@ -91,6 +91,8 @@ Forgejo v12 deprecated the `forgejo-runner register` command in favor of the **c
 
 Each job runs in its own container via the bundled rootless Podman engine. StartOS registers QEMU `binfmt` handlers host-wide, so foreign-architecture container images run under emulation automatically — a job that does its own `docker buildx --platform linux/arm64` needs no extra setup.
 
+The runner image ships `git`, which the daemon shells out to when fetching `uses:` actions (such as `actions/checkout`); without it every `uses:` step would fail at the action fetch. The first job for a given image tag also pulls that image (~1 GB for the default `ubuntu-latest`), so its initial **Set up job** step can take a minute or two before the image is cached locally.
+
 To make this runner accept **whole** foreign-architecture jobs, turn on **Enable Emulation** in Configure. It advertises an extra label for the other CPU architecture, pinned to that platform via forgejo-runner's `?platform=` label option, so jobs targeting it run under emulation. Emulated builds are much slower than native; for regular multi-arch work, prefer a native runner per architecture and reserve emulation for architectures you have no native hardware for.
 
 ## Backups and Restore
@@ -137,7 +139,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions and the developmen
 
 ```yaml
 package_id: forgejo-runner
-image: custom (Debian + rootless Podman + forgejo-runner)
+image: custom (Debian + rootless Podman + git + forgejo-runner)
 architectures: [x86_64, aarch64]
 volumes:
   main: /data
