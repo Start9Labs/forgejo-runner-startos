@@ -21,6 +21,7 @@ export default {
     16: 'Conecte este ejecutor al Forgejo de este dispositivo. Los cambios se aplican en el próximo reinicio.',
     17: 'Guardado',
     18: 'Configuración del ejecutor guardada. Reinicie el servicio para aplicarla.',
+    19: 'Forgejo aún no es accesible en la red interna. El ejecutor se conectará una vez que su dependencia de Forgejo esté en ejecución.',
   },
   de_DE: {
     0: 'Dieses Gerät erfüllt nicht die Mindestanforderungen zum Ausführen von CI-Aufträgen (2 GiB RAM und 2 CPU-Kerne).',
@@ -42,6 +43,7 @@ export default {
     16: 'Verbinden Sie diesen Runner mit dem Forgejo auf diesem Gerät. Das Speichern wird beim nächsten Neustart wirksam.',
     17: 'Gespeichert',
     18: 'Runner-Konfiguration gespeichert. Starten Sie den Dienst neu, um sie anzuwenden.',
+    19: 'Forgejo ist im internen Netzwerk noch nicht erreichbar. Der Runner verbindet sich, sobald seine Forgejo-Abhängigkeit läuft.',
   },
   pl_PL: {
     0: 'To urządzenie nie spełnia minimalnych wymagań do uruchamiania zadań CI (2 GiB RAM i 2 rdzenie CPU).',
@@ -63,6 +65,7 @@ export default {
     16: 'Połącz ten runner z Forgejo na tym urządzeniu. Zapis zostanie zastosowany przy następnym ponownym uruchomieniu.',
     17: 'Zapisano',
     18: 'Konfiguracja runnera zapisana. Uruchom ponownie usługę, aby ją zastosować.',
+    19: 'Forgejo nie jest jeszcze osiągalne w sieci wewnętrznej. Runner połączy się, gdy jego zależność Forgejo będzie uruchomiona.',
   },
   fr_FR: {
     0: 'Cet appareil ne répond pas aux exigences minimales pour exécuter des tâches CI (2 Gio de RAM et 2 cœurs de CPU).',
@@ -84,5 +87,6 @@ export default {
     16: "Connectez cet exécuteur au Forgejo de cet appareil. L'enregistrement prend effet au prochain redémarrage.",
     17: 'Enregistré',
     18: "Configuration de l'exécuteur enregistrée. Redémarrez le service pour l'appliquer.",
+    19: "Forgejo n'est pas encore accessible sur le réseau interne. L'exécuteur se connectera une fois que sa dépendance Forgejo sera en cours d'exécution.",
   },
 } satisfies Record<string, LangDict>

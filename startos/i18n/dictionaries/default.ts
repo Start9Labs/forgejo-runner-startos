@@ -20,6 +20,7 @@ const dict = {
   'Connect this runner to the Forgejo on this device. Saving applies on the next restart.': 16,
   Saved: 17,
   'Runner configuration saved. Restart the service to apply.': 18,
+  'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.': 19,
 }
 
 export type I18nKey = keyof typeof dict

@@ -1,11 +1,15 @@
 import { arch, cpus, totalmem } from 'os'
+import {
+  mainHostId as forgejoHostId,
+  uiPort,
+} from 'forgejo-startos/startos/utils'
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { storeJson } from './fileModels/store.json'
 import {
+  bridgeAddress,
   DATA_DIR,
   EMULATION_IMAGE,
-  LOCAL_FORGE_URL,
   MIN_CPU_CORES,
   MIN_MEMORY_BYTES,
   mount,
@@ -24,6 +28,25 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
   const store = await storeJson.read().const(effects)
   if (!store) throw new Error(i18n('Store not found'))
+
+  // The runner connects to its Forgejo dependency over the internal LXC bridge.
+  // `bridgeAddress` maps Forgejo's `http` binding to `<os ip>:<assigned port>`,
+  // read off the port's `assignedPort` rather than the interface hostname, so it
+  // holds steady across Forgejo updates/restarts; `.const()` re-runs main only
+  // when the address itself changes (Forgejo install/uninstall/port-change),
+  // never on churn. A null (Forgejo absent) surfaces the friendly guard below.
+  const forgeBridge = await bridgeAddress(effects, {
+    packageId: 'forgejo',
+    hostId: forgejoHostId,
+    internalPort: uiPort,
+  }).const()
+  if (!forgeBridge)
+    throw new Error(
+      i18n(
+        'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
+      ),
+    )
+  const forgeUrl = `http://${forgeBridge}`
 
   // The connection is declared in config.yaml from these credentials, so having
   // both is the configured signal — `register` is gone, hence no `.runner`.
@@ -44,7 +67,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     .filter(Boolean)
     .join(',')
 
-  const subcontainer = await sdk.SubContainer.of(
+  const subcontainer = sdk.SubContainer.of(
     effects,
     { imageId: 'main' },
     mount,
@@ -73,7 +96,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
         command: ['/usr/local/bin/entrypoint.sh'],
         user: 'app',
         env: {
-          INSTANCE_URL: LOCAL_FORGE_URL,
+          INSTANCE_URL: forgeUrl,
           RUNNER_UUID: store.runnerUuid,
           RUNNER_TOKEN: store.runnerToken,
           RUNNER_LABELS: labels,
