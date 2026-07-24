@@ -8,7 +8,7 @@ import { sdk } from './sdk'
 export const setDependencies = sdk.setupDependencies(async ({ effects }) => ({
   forgejo: {
     kind: 'running',
-    versionRange: '>=15.0.3:1',
+    versionRange: '>=16.0.0:1',
     healthChecks: ['primary'],
   },
 }))

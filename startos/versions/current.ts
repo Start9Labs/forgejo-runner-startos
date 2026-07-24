@@ -1,7 +1,7 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '12.13.1:0',
+  version: '12.13.1:1',
   releaseNotes: {
     en_US: `Updated Forgejo Runner to 12.13.1.
 
