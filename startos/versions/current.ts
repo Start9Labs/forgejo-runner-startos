@@ -1,48 +1,33 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '12.13.1:1',
+  version: '12.13.2:0',
   releaseNotes: {
-    en_US: `Updated Forgejo Runner to 12.13.1.
+    en_US: `Updated Forgejo Runner to 12.13.2.
 
-- Adds support for \`case\` statements in the workflow expression interpreter.
-- Standardizes the casing of the \`runner.os\` and \`runner.arch\` values.
-- 12.13.1 is a bug-fix release.
-- Migrates the package to start-sdk 2.0 (requires StartOS 0.4.0-beta.10 or later).
+A bug-fix release: corrects \`if:\` conditions that lost their \`\${{ inputs.x }}\` values when a reusable workflow was expanded.
 
-Full release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    es_ES: `Actualiza Forgejo Runner a 12.13.1.
+Full release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    es_ES: `Actualiza Forgejo Runner a 12.13.2.
 
-- Añade compatibilidad con las sentencias \`case\` en el intérprete de expresiones de los flujos de trabajo.
-- Normaliza el uso de mayúsculas y minúsculas en los valores de \`runner.os\` y \`runner.arch\`.
-- La versión 12.13.1 es una versión de corrección de errores.
-- Migra el paquete a start-sdk 2.0 (requiere StartOS 0.4.0-beta.10 o posterior).
+Una versión de corrección de errores: soluciona las condiciones \`if:\` que perdían sus valores \`\${{ inputs.x }}\` al expandir un flujo de trabajo reutilizable.
 
-Notas de la versión completas: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    de_DE: `Aktualisiert Forgejo Runner auf 12.13.1.
+Notas de la versión completas: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    de_DE: `Aktualisiert Forgejo Runner auf 12.13.2.
 
-- Fügt Unterstützung für \`case\`-Anweisungen im Ausdrucksinterpreter der Workflows hinzu.
-- Vereinheitlicht die Groß- und Kleinschreibung der Werte von \`runner.os\` und \`runner.arch\`.
-- 12.13.1 ist eine Fehlerbehebungsversion.
-- Stellt das Paket auf start-sdk 2.0 um (erfordert StartOS 0.4.0-beta.10 oder neuer).
+Eine Fehlerbehebungsversion: behebt \`if:\`-Bedingungen, die ihre \`\${{ inputs.x }}\`-Werte beim Expandieren eines wiederverwendbaren Workflows verloren.
 
-Vollständige Versionshinweise: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    pl_PL: `Aktualizuje Forgejo Runner do 12.13.1.
+Vollständige Versionshinweise: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    pl_PL: `Aktualizuje Forgejo Runner do 12.13.2.
 
-- Dodaje obsługę instrukcji \`case\` w interpreterze wyrażeń przepływów pracy.
-- Ujednolica wielkość liter w wartościach \`runner.os\` i \`runner.arch\`.
-- Wersja 12.13.1 to wydanie naprawcze.
-- Przenosi pakiet na start-sdk 2.0 (wymaga StartOS 0.4.0-beta.10 lub nowszego).
+Wydanie naprawcze: naprawia warunki \`if:\`, które traciły swoje wartości \`\${{ inputs.x }}\` podczas rozwijania wielokrotnego przepływu pracy.
 
-Pełne informacje o wydaniu: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    fr_FR: `Met à jour Forgejo Runner vers 12.13.1.
+Pełne informacje o wydaniu: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    fr_FR: `Met à jour Forgejo Runner vers 12.13.2.
 
-- Ajoute la prise en charge des instructions \`case\` dans l'interpréteur d'expressions des workflows.
-- Uniformise la casse des valeurs \`runner.os\` et \`runner.arch\`.
-- La version 12.13.1 est une version de correction de bogues.
-- Fait passer le paquet à start-sdk 2.0 (nécessite StartOS 0.4.0-beta.10 ou une version ultérieure).
+Une version de correction de bogues : corrige les conditions \`if:\` qui perdaient leurs valeurs \`\${{ inputs.x }}\` lors de l'expansion d'un workflow réutilisable.
 
-Notes de version complètes : https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
+Notes de version complètes : https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
   },
   migrations: {
     // Store schema changed (registration token → connection UUID + token). The
