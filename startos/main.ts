@@ -29,9 +29,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (!store) throw new Error(i18n('Store not found'))
 
   // The runner connects to its Forgejo dependency over the internal LXC bridge.
-  // `bridgeAddress` maps Forgejo's `http` binding to `<os ip>:<assigned port>`,
-  // read off the port's `assignedPort` rather than the interface hostname, so it
-  // holds steady across Forgejo updates/restarts; `.const()` re-runs main only
+  // `sdk.host.getBridgeAddress` resolves the address Forgejo's `http` binding
+  // itself publishes on the bridge, so it holds steady across Forgejo
+  // updates/restarts; `.const()` re-runs main only
   // when the address itself changes (Forgejo install/uninstall/port-change),
   // never on churn. A null (Forgejo absent) surfaces the friendly guard below.
   const forgeBridge = await sdk.host
