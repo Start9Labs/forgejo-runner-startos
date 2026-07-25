@@ -10,7 +10,7 @@ Work this package's `TODO.md` from top to bottom. Keep `README.md` (architecture
 
 ## This repo
 
-- **Package id is `forgejo-runner`.** It is a dependent of `forgejo`: it imports `mainHostId` / `uiPort` from `forgejo-startos/startos/utils` and resolves Forgejo's HTTP address over the LXC bridge via the doctrine-v3 `bridgeAddress` helper in `startos/utils.ts`.
+- **Package id is `forgejo-runner`.** It is a dependent of `forgejo`: it imports `mainHostId` / `uiPort` from `forgejo-startos/startos/utils` and resolves Forgejo's HTTP address over the LXC bridge via `sdk.host.getBridgeAddress`.
 
 ## Inspecting a running install
 
