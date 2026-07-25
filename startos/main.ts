@@ -7,7 +7,6 @@ import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { storeJson } from './fileModels/store.json'
 import {
-  bridgeAddress,
   DATA_DIR,
   EMULATION_IMAGE,
   MIN_CPU_CORES,
@@ -35,11 +34,14 @@ export const main = sdk.setupMain(async ({ effects }) => {
   // holds steady across Forgejo updates/restarts; `.const()` re-runs main only
   // when the address itself changes (Forgejo install/uninstall/port-change),
   // never on churn. A null (Forgejo absent) surfaces the friendly guard below.
-  const forgeBridge = await bridgeAddress(effects, {
-    packageId: 'forgejo',
-    hostId: forgejoHostId,
-    internalPort: uiPort,
-  }).const()
+  const forgeBridge = await sdk.host
+    .getBridgeAddress(effects, {
+      packageId: 'forgejo',
+      hostId: forgejoHostId,
+      internalPort: uiPort,
+      ssl: false,
+    })
+    .const()
   if (!forgeBridge)
     throw new Error(
       i18n(

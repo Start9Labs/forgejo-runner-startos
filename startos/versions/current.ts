@@ -1,48 +1,23 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '12.13.1:1',
+  version: '12.13.1:2',
   releaseNotes: {
-    en_US: `Updated Forgejo Runner to 12.13.1.
+    en_US: `Resolves the addresses of connected services more reliably.
 
-- Adds support for \`case\` statements in the workflow expression interpreter.
-- Standardizes the casing of the \`runner.os\` and \`runner.arch\` values.
-- 12.13.1 is a bug-fix release.
-- Migrates the package to start-sdk 2.0 (requires StartOS 0.4.0-beta.10 or later).
+Forgejo Runner looked up where to reach its dependencies through a field that only applies to one of the two ways a service can publish a port. It now reads the address itself, so a dependency changing how it serves TLS can no longer leave Forgejo Runner unable to find it. Nothing changes in normal operation.`,
+    es_ES: `Resuelve de forma más fiable las direcciones de los servicios conectados.
 
-Full release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    es_ES: `Actualiza Forgejo Runner a 12.13.1.
+Forgejo Runner localizaba sus dependencias mediante un campo que solo se aplica a una de las dos formas en que un servicio puede publicar un puerto. Ahora lee la dirección en sí, de modo que si una dependencia cambia su forma de servir TLS, Forgejo Runner seguirá encontrándola. En funcionamiento normal no cambia nada.`,
+    de_DE: `Ermittelt die Adressen verbundener Dienste zuverlässiger.
 
-- Añade compatibilidad con las sentencias \`case\` en el intérprete de expresiones de los flujos de trabajo.
-- Normaliza el uso de mayúsculas y minúsculas en los valores de \`runner.os\` y \`runner.arch\`.
-- La versión 12.13.1 es una versión de corrección de errores.
-- Migra el paquete a start-sdk 2.0 (requiere StartOS 0.4.0-beta.10 o posterior).
+Forgejo Runner suchte seine Abhängigkeiten über ein Feld, das nur für eine der beiden Arten gilt, auf die ein Dienst einen Port veröffentlichen kann. Jetzt wird die Adresse selbst gelesen, sodass eine Abhängigkeit, die ihre TLS-Bereitstellung ändert, für Forgejo Runner auffindbar bleibt. Im normalen Betrieb ändert sich nichts.`,
+    pl_PL: `Pewniej ustala adresy połączonych usług.
 
-Notas de la versión completas: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    de_DE: `Aktualisiert Forgejo Runner auf 12.13.1.
+Forgejo Runner wyszukiwał swoje zależności przez pole, które dotyczy tylko jednego z dwóch sposobów publikowania portu przez usługę. Teraz odczytuje sam adres, więc zależność zmieniająca sposób udostępniania TLS nadal pozostanie odnajdywalna dla Forgejo Runner. W normalnej pracy nic się nie zmienia.`,
+    fr_FR: `Détermine plus fiablement les adresses des services connectés.
 
-- Fügt Unterstützung für \`case\`-Anweisungen im Ausdrucksinterpreter der Workflows hinzu.
-- Vereinheitlicht die Groß- und Kleinschreibung der Werte von \`runner.os\` und \`runner.arch\`.
-- 12.13.1 ist eine Fehlerbehebungsversion.
-- Stellt das Paket auf start-sdk 2.0 um (erfordert StartOS 0.4.0-beta.10 oder neuer).
-
-Vollständige Versionshinweise: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    pl_PL: `Aktualizuje Forgejo Runner do 12.13.1.
-
-- Dodaje obsługę instrukcji \`case\` w interpreterze wyrażeń przepływów pracy.
-- Ujednolica wielkość liter w wartościach \`runner.os\` i \`runner.arch\`.
-- Wersja 12.13.1 to wydanie naprawcze.
-- Przenosi pakiet na start-sdk 2.0 (wymaga StartOS 0.4.0-beta.10 lub nowszego).
-
-Pełne informacje o wydaniu: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
-    fr_FR: `Met à jour Forgejo Runner vers 12.13.1.
-
-- Ajoute la prise en charge des instructions \`case\` dans l'interpréteur d'expressions des workflows.
-- Uniformise la casse des valeurs \`runner.os\` et \`runner.arch\`.
-- La version 12.13.1 est une version de correction de bogues.
-- Fait passer le paquet à start-sdk 2.0 (nécessite StartOS 0.4.0-beta.10 ou une version ultérieure).
-
-Notes de version complètes : https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.1`,
+Forgejo Runner localisait ses dépendances via un champ qui ne s'applique qu'à l'un des deux modes de publication d'un port par un service. Il lit désormais l'adresse elle-même : une dépendance qui change sa façon de servir TLS reste donc trouvable par Forgejo Runner. Rien ne change en fonctionnement normal.`,
   },
   migrations: {
     // Store schema changed (registration token → connection UUID + token). The
