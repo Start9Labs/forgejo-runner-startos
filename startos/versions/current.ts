@@ -1,23 +1,33 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '12.13.1:3',
+  version: '12.13.2:0',
   releaseNotes: {
-    en_US: `Resolves the addresses of connected services more reliably.
+    en_US: `Updated Forgejo Runner to 12.13.2.
 
-Forgejo Runner looked up where to reach its dependencies through a field that only applies to one of the two ways a service can publish a port. It now reads the address itself, so a dependency changing how it serves TLS can no longer leave Forgejo Runner unable to find it. Nothing changes in normal operation.`,
-    es_ES: `Resuelve de forma más fiable las direcciones de los servicios conectados.
+A small bug-fix release: reusable workflows no longer lose \`\${{ inputs.x }}\` values when an \`if:\` condition is evaluated, so steps guarded by an input are skipped or run as intended.
 
-Forgejo Runner localizaba sus dependencias mediante un campo que solo se aplica a una de las dos formas en que un servicio puede publicar un puerto. Ahora lee la dirección en sí, de modo que si una dependencia cambia su forma de servir TLS, Forgejo Runner seguirá encontrándola. En funcionamiento normal no cambia nada.`,
-    de_DE: `Ermittelt die Adressen verbundener Dienste zuverlässiger.
+Full upstream release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    es_ES: `Forgejo Runner actualizado a 12.13.2.
 
-Forgejo Runner suchte seine Abhängigkeiten über ein Feld, das nur für eine der beiden Arten gilt, auf die ein Dienst einen Port veröffentlichen kann. Jetzt wird die Adresse selbst gelesen, sodass eine Abhängigkeit, die ihre TLS-Bereitstellung ändert, für Forgejo Runner auffindbar bleibt. Im normalen Betrieb ändert sich nichts.`,
-    pl_PL: `Pewniej ustala adresy połączonych usług.
+Una pequeña versión de corrección: los flujos de trabajo reutilizables ya no pierden los valores de \`\${{ inputs.x }}\` al evaluar una condición \`if:\`, por lo que los pasos condicionados por una entrada se omiten o se ejecutan como corresponde.
 
-Forgejo Runner wyszukiwał swoje zależności przez pole, które dotyczy tylko jednego z dwóch sposobów publikowania portu przez usługę. Teraz odczytuje sam adres, więc zależność zmieniająca sposób udostępniania TLS nadal pozostanie odnajdywalna dla Forgejo Runner. W normalnej pracy nic się nie zmienia.`,
-    fr_FR: `Détermine plus fiablement les adresses des services connectés.
+Notas de la versión original completas: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    de_DE: `Forgejo Runner auf 12.13.2 aktualisiert.
 
-Forgejo Runner localisait ses dépendances via un champ qui ne s'applique qu'à l'un des deux modes de publication d'un port par un service. Il lit désormais l'adresse elle-même : une dépendance qui change sa façon de servir TLS reste donc trouvable par Forgejo Runner. Rien ne change en fonctionnement normal.`,
+Eine kleine Fehlerbehebungsversion: Wiederverwendbare Workflows verlieren die Werte von \`\${{ inputs.x }}\` beim Auswerten einer \`if:\`-Bedingung nicht mehr, sodass Schritte mit einer solchen Bedingung wie vorgesehen übersprungen oder ausgeführt werden.
+
+Vollständige Veröffentlichungshinweise des Upstream-Projekts: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    pl_PL: `Zaktualizowano Forgejo Runner do wersji 12.13.2.
+
+Niewielkie wydanie naprawcze: workflowy wielokrotnego użytku nie tracą już wartości \`\${{ inputs.x }}\` podczas obliczania warunku \`if:\`, więc kroki zależne od danych wejściowych są pomijane lub uruchamiane zgodnie z zamierzeniem.
+
+Pełne informacje o wydaniu projektu źródłowego: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+    fr_FR: `Forgejo Runner mis à jour vers 12.13.2.
+
+Une petite version corrective : les workflows réutilisables ne perdent plus les valeurs de \`\${{ inputs.x }}\` lors de l'évaluation d'une condition \`if:\`, de sorte que les étapes conditionnées par une entrée sont ignorées ou exécutées comme prévu.
+
+Notes de version complètes du projet amont : https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
   },
   migrations: {
     // Store schema changed (registration token → connection UUID + token). The
