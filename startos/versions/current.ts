@@ -1,33 +1,68 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '12.13.2:0',
+  version: '13.0.0:0',
   releaseNotes: {
-    en_US: `Updated Forgejo Runner to 12.13.2.
+    en_US: `Updated Forgejo Runner to 13.0.0.
 
-A small bug-fix release: reusable workflows no longer lose \`\${{ inputs.x }}\` values when an \`if:\` condition is evaluated, so steps guarded by an input are skipped or run as intended.
+A major release that makes Forgejo Actions stricter and safer. Review your workflows before updating:
 
-Full upstream release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
-    es_ES: `Forgejo Runner actualizado a 12.13.2.
+- Invalid workflow syntax now fails the job instead of only logging a warning — including expressions that cannot be interpolated and \`strategy.matrix\` exclusions that match no value.
+- The \`set-output\`, \`set-env\` and \`add-path\` workflow commands were removed. Write to \`$FORGEJO_OUTPUT\`, \`$FORGEJO_ENV\` and \`$FORGEJO_PATH\` instead.
+- Container registry logins now come from \`jobs.<job_id>.container.credentials\` instead of the \`DOCKER_USERNAME\` and \`DOCKER_PASSWORD\` secrets.
+- Also fixed: commit impersonation via \`refs/replace/*\` while a job checks out an action.
 
-Una pequeña versión de corrección: los flujos de trabajo reutilizables ya no pierden los valores de \`\${{ inputs.x }}\` al evaluar una condición \`if:\`, por lo que los pasos condicionados por una entrada se omiten o se ejecutan como corresponde.
+Breaking changes explained: https://forgejo.org/2026-08-runner-release-v13/
 
-Notas de la versión original completas: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
-    de_DE: `Forgejo Runner auf 12.13.2 aktualisiert.
+Full upstream release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v13.0.0`,
+    es_ES: `Forgejo Runner actualizado a 13.0.0.
 
-Eine kleine Fehlerbehebungsversion: Wiederverwendbare Workflows verlieren die Werte von \`\${{ inputs.x }}\` beim Auswerten einer \`if:\`-Bedingung nicht mehr, sodass Schritte mit einer solchen Bedingung wie vorgesehen übersprungen oder ausgeführt werden.
+Una versión mayor que hace Forgejo Actions más estricto y seguro. Revise sus flujos de trabajo antes de actualizar:
 
-Vollständige Veröffentlichungshinweise des Upstream-Projekts: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
-    pl_PL: `Zaktualizowano Forgejo Runner do wersji 12.13.2.
+- La sintaxis de flujo de trabajo no válida ahora hace fallar el trabajo en lugar de solo registrar un aviso, incluidas las expresiones que no se pueden interpolar y las exclusiones de \`strategy.matrix\` que no coinciden con ningún valor.
+- Los comandos de flujo de trabajo \`set-output\`, \`set-env\` y \`add-path\` se han eliminado. Escriba en \`$FORGEJO_OUTPUT\`, \`$FORGEJO_ENV\` y \`$FORGEJO_PATH\` en su lugar.
+- Los inicios de sesión en registros de contenedores ahora provienen de \`jobs.<job_id>.container.credentials\` en lugar de los secretos \`DOCKER_USERNAME\` y \`DOCKER_PASSWORD\`.
+- También corregido: la suplantación de commits mediante \`refs/replace/*\` mientras un trabajo obtiene una acción.
 
-Niewielkie wydanie naprawcze: workflowy wielokrotnego użytku nie tracą już wartości \`\${{ inputs.x }}\` podczas obliczania warunku \`if:\`, więc kroki zależne od danych wejściowych są pomijane lub uruchamiane zgodnie z zamierzeniem.
+Explicación de los cambios incompatibles: https://forgejo.org/2026-08-runner-release-v13/
 
-Pełne informacje o wydaniu projektu źródłowego: https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
-    fr_FR: `Forgejo Runner mis à jour vers 12.13.2.
+Notas de la versión original completas: https://code.forgejo.org/forgejo/runner/releases/tag/v13.0.0`,
+    de_DE: `Forgejo Runner auf 13.0.0 aktualisiert.
 
-Une petite version corrective : les workflows réutilisables ne perdent plus les valeurs de \`\${{ inputs.x }}\` lors de l'évaluation d'une condition \`if:\`, de sorte que les étapes conditionnées par une entrée sont ignorées ou exécutées comme prévu.
+Eine Hauptversion, die Forgejo Actions strenger und sicherer macht. Prüfen Sie Ihre Workflows vor der Aktualisierung:
 
-Notes de version complètes du projet amont : https://code.forgejo.org/forgejo/runner/releases/tag/v12.13.2`,
+- Ungültige Workflow-Syntax lässt den Job jetzt fehlschlagen, statt nur eine Warnung zu protokollieren — darunter Ausdrücke, die nicht interpoliert werden können, und \`strategy.matrix\`-Ausschlüsse, die auf keinen Wert passen.
+- Die Workflow-Befehle \`set-output\`, \`set-env\` und \`add-path\` wurden entfernt. Schreiben Sie stattdessen in \`$FORGEJO_OUTPUT\`, \`$FORGEJO_ENV\` und \`$FORGEJO_PATH\`.
+- Anmeldungen an Container-Registries stammen jetzt aus \`jobs.<job_id>.container.credentials\` statt aus den Secrets \`DOCKER_USERNAME\` und \`DOCKER_PASSWORD\`.
+- Ebenfalls behoben: Commit-Identitätsfälschung über \`refs/replace/*\`, während ein Job eine Action auscheckt.
+
+Erläuterung der inkompatiblen Änderungen: https://forgejo.org/2026-08-runner-release-v13/
+
+Vollständige Veröffentlichungshinweise des Upstream-Projekts: https://code.forgejo.org/forgejo/runner/releases/tag/v13.0.0`,
+    pl_PL: `Zaktualizowano Forgejo Runner do wersji 13.0.0.
+
+Duże wydanie, które czyni Forgejo Actions bardziej rygorystycznym i bezpiecznym. Przejrzyj swoje workflowy przed aktualizacją:
+
+- Nieprawidłowa składnia workflow powoduje teraz niepowodzenie zadania zamiast samego ostrzeżenia w dzienniku — dotyczy to wyrażeń, których nie da się zinterpolować, oraz wykluczeń \`strategy.matrix\`, które nie pasują do żadnej wartości.
+- Polecenia workflow \`set-output\`, \`set-env\` i \`add-path\` zostały usunięte. Zamiast nich zapisuj do \`$FORGEJO_OUTPUT\`, \`$FORGEJO_ENV\` i \`$FORGEJO_PATH\`.
+- Logowanie do rejestrów kontenerów pochodzi teraz z \`jobs.<job_id>.container.credentials\`, a nie z sekretów \`DOCKER_USERNAME\` i \`DOCKER_PASSWORD\`.
+- Naprawiono również: podszywanie się pod autora commita przez \`refs/replace/*\` podczas pobierania akcji przez zadanie.
+
+Wyjaśnienie zmian niezgodnych wstecz: https://forgejo.org/2026-08-runner-release-v13/
+
+Pełne informacje o wydaniu projektu źródłowego: https://code.forgejo.org/forgejo/runner/releases/tag/v13.0.0`,
+    fr_FR: `Forgejo Runner mis à jour vers 13.0.0.
+
+Une version majeure qui rend Forgejo Actions plus strict et plus sûr. Vérifiez vos workflows avant de mettre à jour :
+
+- Une syntaxe de workflow invalide fait désormais échouer la tâche au lieu de simplement journaliser un avertissement — y compris les expressions qui ne peuvent pas être interpolées et les exclusions \`strategy.matrix\` qui ne correspondent à aucune valeur.
+- Les commandes de workflow \`set-output\`, \`set-env\` et \`add-path\` ont été supprimées. Écrivez plutôt dans \`$FORGEJO_OUTPUT\`, \`$FORGEJO_ENV\` et \`$FORGEJO_PATH\`.
+- Les connexions aux registres de conteneurs proviennent maintenant de \`jobs.<job_id>.container.credentials\` au lieu des secrets \`DOCKER_USERNAME\` et \`DOCKER_PASSWORD\`.
+- Également corrigé : l'usurpation de commit via \`refs/replace/*\` lorsqu'une tâche récupère une action.
+
+Explication des changements incompatibles : https://forgejo.org/2026-08-runner-release-v13/
+
+Notes de version complètes du projet amont : https://code.forgejo.org/forgejo/runner/releases/tag/v13.0.0`,
   },
   migrations: {
     // Store schema changed (registration token → connection UUID + token). The

@@ -1,6 +1,6 @@
 # Forgejo Runner binary, pulled from the official multi-arch image (pinned).
 # Bump the tag here and the version in startos/versions/current.ts together.
-FROM code.forgejo.org/forgejo/runner:12.13.2 AS runner
+FROM code.forgejo.org/forgejo/runner:13.0.0 AS runner
 
 FROM debian:trixie-slim
 
