@@ -1,7 +1,7 @@
 export const DEFAULT_LANG = 'en_US'
 
 const dict = {
-  'This device does not meet the minimum requirements to run CI jobs (2 GiB RAM and 2 CPU cores).': 0,
+  'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).': 0,
   'Store not found': 1,
   Runner: 2,
   'Runner is configured': 3,
