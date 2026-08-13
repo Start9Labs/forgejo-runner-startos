@@ -20,7 +20,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (totalmem() < MIN_MEMORY_BYTES || cpus().length < MIN_CPU_CORES) {
     throw new Error(
       i18n(
-        'This device does not meet the minimum requirements to run CI jobs (2 GiB RAM and 2 CPU cores).',
+        'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).',
       ),
     )
   }
