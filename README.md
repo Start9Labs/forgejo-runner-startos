@@ -154,6 +154,7 @@ startos_managed_env_vars:
   - RUNNER_LABELS
   - RUNNER_CAPACITY
   - XDG_RUNTIME_DIR
+  - USER
 actions:
   - configure
 ```
