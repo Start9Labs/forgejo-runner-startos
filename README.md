@@ -4,11 +4,15 @@
 
 # Forgejo Runner on StartOS
 
-> **Upstream docs:** <https://forgejo.org/docs/latest/admin/actions/>
->
-> Everything not listed in this document behaves identically to upstream Forgejo Runner. If a feature, setting, or behavior is not mentioned here, the upstream documentation is accurate and fully applicable.
+> Everything not listed in this document should behave the same as upstream
+> Forgejo Runner. If a feature, setting, or behavior is not mentioned here, the
+> upstream documentation is accurate and fully applicable — see the
+> Documentation section of `instructions.md` for links.
 
-[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes Forgejo Actions (CI/CD) workflows. This repository packages it for [StartOS](https://github.com/Start9Labs/start-os/), where it runs each job inside a rootless, nested OCI sandbox and serves the Forgejo instance installed on the same device.
+[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes Forgejo Actions workflows. This package runs it against the Forgejo on this same device, with a rootless Podman engine inside the service so each job gets its own container.
+
+- **Upstream repo:** <https://code.forgejo.org/forgejo/runner>
+- **Wrapper repo:** <https://github.com/Start9Labs/forgejo-runner-startos>
 
 ---
 
@@ -16,122 +20,127 @@
 
 - [Image and Container Runtime](#image-and-container-runtime)
 - [Volume and Data Layout](#volume-and-data-layout)
-- [Installation and First-Run Flow](#installation-and-first-run-flow)
-- [Configuration Management](#configuration-management)
-- [Network Access and Interfaces](#network-access-and-interfaces)
-- [Actions (StartOS UI)](#actions-startos-ui)
-- [Job Execution and Multi-Arch](#job-execution-and-multi-arch)
-- [Backups and Restore](#backups-and-restore)
-- [Health Checks](#health-checks)
+- [File Models](#file-models)
 - [Dependencies](#dependencies)
+- [Network Access and Interfaces](#network-access-and-interfaces)
+- [Installation and First-Run Flow](#installation-and-first-run-flow)
+- [Actions](#actions)
+- [Health Checks](#health-checks)
+- [Backups and Restore](#backups-and-restore)
 - [Limitations and Differences](#limitations-and-differences)
-- [What Is Unchanged from Upstream](#what-is-unchanged-from-upstream)
-- [Contributing](#contributing)
 - [Quick Reference for AI Consumers](#quick-reference-for-ai-consumers)
 
 ---
 
 ## Image and Container Runtime
 
-| Aspect        | Standard install                                                   | StartOS                                                                                                                                                                                   |
-| ------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Image         | The `forgejo-runner` binary plus a Docker/Podman socket you supply | Custom image: Debian + rootless **Podman** and **git** (used to fetch `uses:` actions), with the `forgejo-runner` binary copied from the official `code.forgejo.org/forgejo/runner` image |
-| Architectures | depends on host                                                    | x86_64, aarch64                                                                                                                                                                           |
-| Job engine    | an external Docker/Podman daemon you wire up                       | a rootless Podman engine bundled inside the service (`userspaceFilesystems` + `virtualNetworking`)                                                                                                                   |
-| Entrypoint    | `forgejo-runner daemon`                                            | a wrapper that starts the Podman socket, declares the forge connection in `config.yaml` (the v12 connection model), then runs `forgejo-runner daemon`                                     |
+The image is built here: upstream's runner binary is copied onto a Debian base carrying a rootless container engine, because the runner needs somewhere to run each job.
 
-Upstream expects you to provide a container engine; this package bundles a rootless Podman engine so each CI job is sandboxed without privileged Docker-in-Docker.
+| Property      | Value                                                                    |
+| ------------- | ------------------------------------------------------------------------ |
+| Image         | Built from `Dockerfile` — upstream's `forgejo-runner` binary plus Podman |
+| Architectures | x86_64, aarch64                                                          |
+| Command       | The repo's `entrypoint.sh`, run as the unprivileged `app` user           |
+| Subcontainer  | `forgejo-runner-sub` — the `primary` daemon, and the one to `attach` to  |
+
+The manifest declares two device grants that this arrangement requires: **userspace filesystems** for the storage driver, and **virtual networking** for job networking. Without either, the nested engine cannot start a job container. The image also carries `git`, because the runner fetches `uses:` actions with the git CLI and every such step fails without it.
+
+Two oneshots run as root before the daemon. `own-data` creates the runner's working directory on the volume and hands it to `app`, leaving the rest of the volume alone. `device-perms` re-opens `/dev/net/tun` and `/dev/fuse` to mode 0666: StartOS 0.4.0.1 and earlier can create those granted nodes root-only, and the engine opens both as the unprivileged user. It is idempotent and becomes a no-op once the OS-side fix ships.
 
 ## Volume and Data Layout
 
-| Aspect              | StartOS                                                                                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Primary volume      | Single managed volume `main`, mounted at `/data`                                                                                                    |
-| Runner working area | `/data/runner` — the generated `config.yaml` (carrying the declared forge connection) and the Podman layer store (so job images survive restarts)   |
-| StartOS settings    | `/data/store.json` — runner UUID + token, labels, concurrency, and the emulation toggle (see [Configuration Management](#configuration-management)) |
+One volume, shared between the package's state and the runner's working area.
 
-## Installation and First-Run Flow
+| Volume | Mount Point | Purpose                                                              |
+| ------ | ----------- | -------------------------------------------------------------------- |
+| `main` | `/data`     | `store.json`, and the runner's own working directory under `runner/` |
 
-The runner does nothing until it is connected to a Forgejo instance.
+## File Models
 
-1. On start, the entrypoint brings up the rootless Podman socket.
-2. If no runner UUID + token are configured, the service stays up but idle and prompts you to run **Configure**.
-3. Once configured, it writes the forge connection into `config.yaml` and runs the runner daemon, which long-polls Forgejo for jobs.
+One model, holding the runner's registration and its job configuration.
 
-## Configuration Management
+| File         | Format | Modelled                | Written by                           |
+| ------------ | ------ | ----------------------- | ------------------------------------ |
+| `store.json` | JSON   | Yes — `FileHelper.json` | Every init, and the Configure action |
 
-Forgejo v12 deprecated the `forgejo-runner register` command in favor of the **connection model**: a runner is created in Forgejo (which issues a UUID + token), and those credentials are declared in `config.yaml` under `server.connections`. On StartOS you supply them through the **Configure** action; values persist in `store.json` and are written into the generated `config.yaml` on each start.
+| Key                         | Notes                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------- |
+| `runnerUuid`, `runnerToken` | The credentials Forgejo shows when you create a runner. Both present is what counts as configured |
+| `labels`                    | Comma-separated, in the runner's own `name:docker://image` or `name:host` syntax                  |
+| `capacity`                  | How many jobs run at once                                                                         |
+| `emulation`                 | Whether to also advertise the other CPU architecture                                              |
 
-| Setting          | Managed via                                                                                                           |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Runner UUID      | "Configure" action — from Forgejo's _Create new Runner_ page                                                          |
-| Runner token     | "Configure" action — issued alongside the UUID                                                                        |
-| Labels           | "Configure" action — written into the `config.yaml` connection                                                        |
-| Concurrent jobs  | "Configure" action — sets `runner.capacity`                                                                           |
-| Enable Emulation | "Configure" action — appends a foreign-arch label (see [Job Execution and Multi-Arch](#job-execution-and-multi-arch)) |
-| Forge URL        | Resolved automatically to the local Forgejo's HTTP binding over the internal LXC bridge                               |
+The model **strips keys it does not declare**, and nothing else writes the file. Everything reaches the runner as environment on each start, so there is no configuration file on disk to inspect or correct — including the connection to Forgejo, whose address is resolved rather than stored.
 
-## Network Access and Interfaces
+`USER` is set to the unprivileged account the daemon runs as, not left at the container's inherited `root`. The container engine resolves its subordinate UID and GID ranges by `$USER`, and finding none for `root` it falls back to a single-ID mapping — under which any job image carrying a file not owned by root fails to unpack.
 
-**None.** The runner makes only outbound connections — it long-polls Forgejo for jobs and pulls job images — and exposes no inbound interface. View its status and job logs inside Forgejo (its Runners list and the Actions tab), plus the StartOS service logs.
-
-## Actions (StartOS UI)
-
-| Action    | Visibility | Availability | Purpose                                                         |
-| --------- | ---------- | ------------ | --------------------------------------------------------------- |
-| Configure | Visible    | Any          | Set the runner UUID + token, labels, concurrency, and emulation |
-
-### Configure
-
-- **Inputs:** Runner UUID (required), runner token (required), labels, concurrent jobs, Enable Emulation
-- **Outputs:** None — restart the service to apply
-- The UUID + token come from Forgejo's _Create new Runner_ page and are durable credentials (unlike the old single-use registration token); saving simply rewrites the connection and restarts pick it up.
-
-## Job Execution and Multi-Arch
-
-Each job runs in its own container via the bundled rootless Podman engine. StartOS registers QEMU `binfmt` handlers host-wide, so foreign-architecture container images run under emulation automatically — a job that does its own `docker buildx --platform linux/arm64` needs no extra setup.
-
-The runner image ships `git`, which the daemon shells out to when fetching `uses:` actions (such as `actions/checkout`); without it every `uses:` step would fail at the action fetch. The first job for a given image tag also pulls that image (~1 GB for the default `ubuntu-latest`), so its initial **Set up job** step can take a minute or two before the image is cached locally.
-
-To make this runner accept **whole** foreign-architecture jobs, turn on **Enable Emulation** in Configure. It advertises an extra label for the other CPU architecture, pinned to that platform via forgejo-runner's `?platform=` label option, so jobs targeting it run under emulation. Emulated builds are much slower than native; for regular multi-arch work, prefer a native runner per architecture and reserve emulation for architectures you have no native hardware for.
-
-## Backups and Restore
-
-| Aspect  | StartOS                                                                                                     |
-| ------- | ----------------------------------------------------------------------------------------------------------- |
-| Scope   | Full `/data` volume — `store.json`, the runner config, and cached job images                                |
-| Restore | The volume is fully restored before the service starts; the runner reconnects using its declared connection |
-
-## Health Checks
-
-| Aspect       | StartOS                                                                                         |
-| ------------ | ----------------------------------------------------------------------------------------------- |
-| Method       | Reflects configuration state, displayed as "Runner"                                             |
-| Grace period | 60 seconds                                                                                      |
-| Behavior     | Healthy once the runner UUID + token are configured; otherwise prompts you to run **Configure** |
+The one value the package composes rather than passes through is the label list. With emulation enabled it appends a foreign-architecture label pinned to that platform, so jobs targeting the other architecture are served under the host's emulation layer. The runner process itself always runs natively.
 
 ## Dependencies
 
-| Dependency  | Required?          | Purpose                                                                                                                                            |
-| ----------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Forgejo** | Required (running) | The forge this runner serves. The runner connects and long-polls over Forgejo's HTTP API, so Forgejo's web-interface health check must be passing. |
+One, and it is required in the strong sense.
 
-This runner serves only the Forgejo on the same device — there is no remote-forge mode.
+| Dependency | Kind      | Health check | Mounts | Why                                            |
+| ---------- | --------- | ------------ | ------ | ---------------------------------------------- |
+| Forgejo    | `running` | `primary`    | none   | The forge this runner registers with and polls |
+
+The health check is required as well as "running", because the runner talks to Forgejo's HTTP API — a Forgejo that is up but not yet serving is no use to it.
+
+**This runner only ever serves the Forgejo on this device.** The address is resolved from Forgejo's own binding over the service bridge; there is no field for a remote forge. If Forgejo is not reachable, `main` refuses to start with a message saying so rather than starting a runner that cannot register.
+
+## Network Access and Interfaces
+
+None. The runner dials out to its forge and pulls job images; it accepts no inbound connections and exports nothing.
+
+## Installation and First-Run Flow
+
+Install seeds the store with defaults and nothing else. There is no task, and the service starts — but it will not do any work until you connect it.
+
+Two gates apply before that, both enforced rather than advisory:
+
+1. **Hardware.** `main` refuses to start on a device below 2 CPU cores or roughly a 4 GB machine's worth of memory, because every job is a full build. The message says so explicitly rather than failing obscurely later.
+2. **Forgejo.** It must be installed and serving.
+
+Then run [Configure](#actions) with the UUID and token Forgejo shows under **Settings → Actions → Runners → Create new Runner**, and restart. Until then the runner's health check reports a failure telling you to do exactly that.
+
+## Actions
+
+One action.
+
+### Configure
+
+Connects the runner to Forgejo and sets how it advertises itself.
+
+- **What it changes:** every field in `store.json` — the credentials, labels, concurrency, and the emulation toggle.
+- **Cost:** the write is instant, but **it does not apply until the service restarts.** The action says so in its result rather than restarting for you.
+- **Repeat safety:** idempotent; the form is pre-filled with the current values and replaces them wholesale.
+- **Input notes:** labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
+
+## Health Checks
+
+One check, and it reports configuration rather than liveness.
+
+| Check              | Method                                      | Grace Period |
+| ------------------ | ------------------------------------------- | ------------ |
+| `primary` "Runner" | Whether both the UUID and the token are set | 60 seconds   |
+
+It polls slowly, because the thing it reports changes only when you change it. A failure here means the runner has not been given credentials — it names the action to run. A pass means the runner is configured; whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
+
+## Backups and Restore
+
+The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. No dump step and nothing excluded.
+
+- **Included:** the runner's credentials and configuration, and its working directory.
+- **Restore:** the runner comes back configured against the same UUID and token. Whether Forgejo still recognises them depends on Forgejo's own state, which is that package's backup rather than this one's — if the forge was rebuilt, register the runner again.
 
 ## Limitations and Differences
 
-1. **Local forge only** — connects to the Forgejo on this device; there is no remote-instance option.
-2. **No inbound interface** — outbound-only; status and logs are viewed in Forgejo, not in a runner UI.
-3. **Connection model, not `register`** — you provide the UUID + token from Forgejo's _Create new Runner_ page; the deprecated `register` command is not used.
-4. **Emulated foreign-arch jobs are slow** — a native runner per architecture is preferred for regular multi-arch builds.
-
-## What Is Unchanged from Upstream
-
-Everything not listed above behaves as documented at <https://forgejo.org/docs/latest/admin/actions/> — workflow syntax, the `daemon` behavior, label matching, and job execution semantics.
-
-## Contributing
-
-Build and development workflow follow the StartOS packaging guide: <https://docs.start9.com/packaging>. Keep `README.md`, `instructions.md`, and `AGENTS.md` in sync with any change to user-visible behavior or package structure.
+1. **Only the Forgejo on this device.** There is no field for a remote forge; the address is resolved from the local dependency.
+2. **Configuration applies on restart**, not immediately.
+3. **The service refuses to start on small hardware** — under 2 cores or roughly a 4 GB machine.
+4. **Emulated jobs are much slower than native.** The toggle exists for occasional cross-architecture work; a native runner per architecture is the better arrangement for regular builds.
+5. **Jobs run in a rootless engine inside the service**, which requires the two device grants named above, and on StartOS 0.4.0.1 and earlier a startup step to make those device nodes readable by the unprivileged user.
+6. **No riscv64 build.** x86_64 and aarch64 only.
 
 ---
 
@@ -139,14 +148,16 @@ Build and development workflow follow the StartOS packaging guide: <https://docs
 
 ```yaml
 package_id: forgejo-runner
-image: custom (Debian + rootless Podman + git + forgejo-runner)
-architectures: [x86_64, aarch64]
+image: ./Dockerfile # upstream's runner binary plus rootless Podman on Debian
+architectures:
+  - x86_64
+  - aarch64
+subcontainers:
+  - forgejo-runner-sub
 volumes:
   main: /data
-ports: none
-dependencies:
-  - forgejo (required, running)
-registration: connection model (server.connections in config.yaml; register is deprecated)
+file_models:
+  - store.json
 startos_managed_env_vars:
   - INSTANCE_URL
   - RUNNER_UUID
@@ -155,6 +166,12 @@ startos_managed_env_vars:
   - RUNNER_CAPACITY
   - XDG_RUNTIME_DIR
   - USER
+dependencies:
+  - forgejo # required; gated on its primary health check
+interfaces: {} # none; the runner accepts no inbound connections
 actions:
   - configure
+tasks: []
+health_checks:
+  - primary # displayed "Runner"; reports whether credentials are set
 ```
