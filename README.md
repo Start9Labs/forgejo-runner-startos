@@ -25,6 +25,7 @@
 - [Network Access and Interfaces](#network-access-and-interfaces)
 - [Installation and First-Run Flow](#installation-and-first-run-flow)
 - [Actions](#actions)
+- [Tasks](#tasks)
 - [Health Checks](#health-checks)
 - [Backups and Restore](#backups-and-restore)
 - [Limitations and Differences](#limitations-and-differences)
@@ -115,6 +116,10 @@ Connects the runner to Forgejo and sets how it advertises itself.
 - **Cost:** the write is instant, but **it does not apply until the service restarts.** The action says so in its result rather than restarting for you.
 - **Repeat safety:** idempotent; the form is pre-filled with the current values and replaces them wholesale.
 - **Input notes:** labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
+
+## Tasks
+
+None. This package raises no tasks, so the service is never held on a prompt and its ordinary controls are always available.
 
 ## Health Checks
 
