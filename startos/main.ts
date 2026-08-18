@@ -20,7 +20,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (totalmem() < MIN_MEMORY_BYTES || cpus().length < MIN_CPU_CORES) {
     throw new Error(
       i18n(
-        'This device does not meet the minimum requirements to run CI jobs (2 GiB RAM and 2 CPU cores).',
+        'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).',
       ),
     )
   }
@@ -92,6 +92,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
+    .addOneshot('device-perms', {
+      // StartOS 0.4.0.1 and earlier can hand the service root-only /dev/net/tun
+      // and /dev/fuse; podman opens both as 'app'.
+      subcontainer,
+      exec: {
+        command: ['chmod', '0666', '/dev/net/tun', '/dev/fuse'],
+        user: 'root',
+      },
+      requires: [],
+    })
     .addDaemon('primary', {
       subcontainer,
       exec: {
@@ -104,6 +114,9 @@ export const main = sdk.setupMain(async ({ effects }) => {
           RUNNER_LABELS: labels,
           RUNNER_CAPACITY: String(store.capacity),
           XDG_RUNTIME_DIR: `${DATA_DIR}/runner/run`,
+          // podman looks up its subuid/subgid ranges by $USER, which the
+          // container inherits as 'root' regardless of the user it runs as.
+          USER: 'app',
         },
       },
       ready: {
@@ -121,6 +134,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
                 ),
               },
       },
-      requires: ['own-data'],
+      requires: ['own-data', 'device-perms'],
     })
 })
