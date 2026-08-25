@@ -28,5 +28,6 @@ verified, tried, and decided belongs in the commit message and the PR body.
 
 - **`git` in the image is load-bearing.** The runner fetches `uses:` actions with the git CLI, so without it every `uses:` step fails at fetch time with an exec error rather than anything that names the cause.
 - **The `subuid`/`subgid` range must start above the `app` user's own uid and stay inside the subcontainer's userns.** `app` is uid 1000 and the range is 1001–65535 for that reason; overlapping or exceeding it breaks nested user namespaces.
+- **`clean-runtime` requires `own-data`, not `[]`.** Chain entries with no requirements run concurrently, and `own-data`'s `chown -R` walks the tree `clean-runtime` deletes. Racing them fails the chown with ENOENT, so the oneshot never succeeds and `primary` is held indefinitely.
 - **`own-data` chowns only `runner/`, not the volume root.** StartOS's `store.json` lives at the same mount and must keep its own ownership.
 - **Foreign-architecture labels must carry the `?platform=` pin**, which is why the emulation toggle composes the label rather than asking the user to type one. A hand-written arch label runs the job natively and fails confusingly.

@@ -46,7 +46,7 @@ The image is built here: upstream's runner binary is copied onto a Debian base c
 
 The manifest declares two device grants that this arrangement requires: **userspace filesystems** for the storage driver, and **virtual networking** for job networking. Without either, the nested engine cannot start a job container. The image also carries `git`, because the runner fetches `uses:` actions with the git CLI and every such step fails without it.
 
-Two oneshots run as root before the daemon. `own-data` creates the runner's working directory on the volume and hands it to `app`, leaving the rest of the volume alone. `device-perms` re-opens `/dev/net/tun` and `/dev/fuse` to mode 0666: StartOS 0.4.0.1 and earlier can create those granted nodes root-only, and the engine opens both as the unprivileged user. It is idempotent and becomes a no-op once the OS-side fix ships.
+Three oneshots run as root before the daemon. `own-data` creates the runner's working directory on the volume and hands it to `app`, leaving the rest of the volume alone. `device-perms` re-opens `/dev/net/tun` and `/dev/fuse` to mode 0666: StartOS 0.4.0.1 and earlier can create those granted nodes root-only, and the engine opens both as the unprivileged user. It is idempotent and becomes a no-op once the OS-side fix ships. `clean-runtime` removes the engine's runroot and libpod tmpdir. Both sit under `XDG_RUNTIME_DIR` on the persistent volume, so they carry the previous boot's ID across a restart and podman refuses to start against a stale one. It runs after `own-data` rather than beside it, so the two never walk the same tree at once, and it removes no durable state: the image layer store is a sibling directory and is left alone.
 
 ## Volume and Data Layout
 

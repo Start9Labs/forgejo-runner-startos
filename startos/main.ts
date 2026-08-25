@@ -102,6 +102,30 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
+    .addOneshot('clean-runtime', {
+      // XDG_RUNTIME_DIR is on the persistent volume, so podman's runroot and
+      // libpod tmpdir outlive a reboot — and so does the boot ID podman cached
+      // in them. On the next boot that ID no longer matches, podman refuses to
+      // start, and the entrypoint exits; nothing clears the directories, so the
+      // service crash-loops indefinitely. Neither holds durable state: the image
+      // layer store is a sibling at ${DATA_DIR}/runner/containers/storage and is
+      // not touched here.
+      //
+      // requires own-data, not []: entries with no requirements run
+      // concurrently, and own-data's `chown -R` walks this same tree. A delete
+      // racing that walk fails it with ENOENT, this oneshot never reports
+      // success, and primary is held forever — worse than the crash loop.
+      subcontainer,
+      exec: {
+        command: [
+          'sh',
+          '-c',
+          `rm -rf ${DATA_DIR}/runner/run/containers ${DATA_DIR}/runner/run/libpod/tmp`,
+        ],
+        user: 'root',
+      },
+      requires: ['own-data'],
+    })
     .addDaemon('primary', {
       subcontainer,
       exec: {
@@ -134,6 +158,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
                 ),
               },
       },
-      requires: ['own-data', 'device-perms'],
+      requires: ['own-data', 'device-perms', 'clean-runtime'],
     })
 })
