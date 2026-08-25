@@ -20,7 +20,7 @@ This runner serves the Forgejo on the same device, so install and start **Forgej
 
 ## Using Forgejo Runner
 
-Once it is online, Forgejo dispatches workflow jobs to it automatically — there is nothing to drive here day to day. Follow progress and read job logs in Forgejo's **Actions** tab; the service logs here show startup and connection.
+Once it is online, Forgejo dispatches workflow jobs to it automatically — there is nothing to drive here day to day. Follow progress and read job logs in Forgejo's **Actions** tab; here, the **Runner** health check shows whether it is up, and the service logs show startup and connection.
 
 ### Labels and architecture
 

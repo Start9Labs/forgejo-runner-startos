@@ -4,7 +4,7 @@ const dict = {
   'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).': 0,
   'Store not found': 1,
   Runner: 2,
-  'Runner is configured': 3,
+  'Runner is running': 3,
   'Run the Configure action to connect this runner to a Forgejo instance': 4,
   'Runner UUID': 5,
   'The runner UUID shown by Forgejo when you create a runner, under Site/Org/Repo Settings → Actions → Runners → Create new Runner.': 6,
@@ -21,6 +21,7 @@ const dict = {
   Saved: 17,
   'Runner configuration saved. Restart the service to apply.': 18,
   'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.': 19,
+  'The runner is not running': 20,
 }
 
 export type I18nKey = keyof typeof dict

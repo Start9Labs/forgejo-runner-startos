@@ -132,11 +132,23 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ready: {
         display: i18n('Runner'),
         gracePeriod: 60000,
-        // Poll slowly — configuration state is steady, not flapping.
         trigger: sdk.trigger.cooldownTrigger(30000),
         fn: async () =>
           configured
-            ? { result: 'success', message: i18n('Runner is configured') }
+            ? sdk.healthCheck.runHealthScript(
+                [
+                  'bash',
+                  '-c',
+                  // `comm` is 15 characters wide, which `forgejo-runner` fits.
+                  `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && podman --remote --url unix://${DATA_DIR}/runner/run/podman/podman.sock info >/dev/null`,
+                ],
+                subcontainer,
+                {
+                  timeout: 10000,
+                  message: () => i18n('Runner is running'),
+                  errorMessage: i18n('The runner is not running'),
+                },
+              )
             : {
                 result: 'failure',
                 message: i18n(
