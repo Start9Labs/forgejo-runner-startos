@@ -12,7 +12,7 @@ A major release that makes Forgejo Actions stricter and safer. Review your workf
 - Container registry logins now come from \`jobs.<job_id>.container.credentials\` instead of the \`DOCKER_USERNAME\` and \`DOCKER_PASSWORD\` secrets.
 - Also fixed: commit impersonation via \`refs/replace/*\` while a job checks out an action.
 
-Packaging: this release also fixes two problems with the bundled Podman engine: jobs failing before their first step because it could not open the tunnel device that gives each job container a network, and job images containing files not owned by root — most Ubuntu-based images — failing to unpack. It also clears the engine's leftover runtime state when the service starts, so rebooting the server no longer leaves the runner restarting in a loop and never picking up jobs.
+Packaging: this release also fixes two problems with the bundled Podman engine: jobs failing before their first step because it could not open the tunnel device that gives each job container a network, and job images containing files not owned by root — most Ubuntu-based images — failing to unpack. It also clears the engine's leftover runtime state when the service starts, so rebooting the server no longer leaves the runner restarting in a loop and never picking up jobs. The health check now reflects whether the runner is actually running.
 
 Breaking changes explained: https://forgejo.org/2026-08-runner-release-v13/
 
@@ -26,7 +26,7 @@ Una versión mayor que hace Forgejo Actions más estricto y seguro. Revise sus f
 - Los inicios de sesión en registros de contenedores ahora provienen de \`jobs.<job_id>.container.credentials\` en lugar de los secretos \`DOCKER_USERNAME\` y \`DOCKER_PASSWORD\`.
 - También corregido: la suplantación de commits mediante \`refs/replace/*\` mientras un trabajo obtiene una acción.
 
-Empaquetado: este lanzamiento corrige además dos problemas del motor Podman incluido: los trabajos fallaban antes de su primer paso porque no podía abrir el dispositivo de túnel que da red a cada contenedor de trabajo, y las imágenes de trabajo con archivos que no pertenecen a root —la mayoría de las basadas en Ubuntu— no se descomprimían. También limpia el estado de ejecución que el motor deja atrás al iniciarse el servicio, de modo que reiniciar el servidor ya no deja al runner reiniciándose en bucle sin recoger ningún trabajo.
+Empaquetado: este lanzamiento corrige además dos problemas del motor Podman incluido: los trabajos fallaban antes de su primer paso porque no podía abrir el dispositivo de túnel que da red a cada contenedor de trabajo, y las imágenes de trabajo con archivos que no pertenecen a root —la mayoría de las basadas en Ubuntu— no se descomprimían. También limpia el estado de ejecución que el motor deja atrás al iniciarse el servicio, de modo que reiniciar el servidor ya no deja al runner reiniciándose en bucle sin recoger ningún trabajo. La comprobación de estado ahora refleja si el ejecutor está realmente en ejecución.
 
 Explicación de los cambios incompatibles: https://forgejo.org/2026-08-runner-release-v13/
 
@@ -40,7 +40,7 @@ Eine Hauptversion, die Forgejo Actions strenger und sicherer macht. Prüfen Sie 
 - Anmeldungen an Container-Registries stammen jetzt aus \`jobs.<job_id>.container.credentials\` statt aus den Secrets \`DOCKER_USERNAME\` und \`DOCKER_PASSWORD\`.
 - Ebenfalls behoben: Commit-Identitätsfälschung über \`refs/replace/*\`, während ein Job eine Action auscheckt.
 
-Paketierung: Diese Version behebt außerdem zwei Probleme der mitgelieferten Podman-Engine: Jobs scheiterten vor ihrem ersten Schritt, weil sie das Tunnelgerät nicht öffnen konnte, das jedem Job-Container ein Netzwerk gibt, und Job-Images mit Dateien, die nicht root gehören — die meisten Ubuntu-basierten Images — ließen sich nicht entpacken. Außerdem wird beim Start des Dienstes der zurückgebliebene Laufzeitzustand der Engine bereinigt, sodass ein Neustart des Servers den Runner nicht mehr in einer Endlosschleife hängen lässt, in der er keine Jobs annimmt.
+Paketierung: Diese Version behebt außerdem zwei Probleme der mitgelieferten Podman-Engine: Jobs scheiterten vor ihrem ersten Schritt, weil sie das Tunnelgerät nicht öffnen konnte, das jedem Job-Container ein Netzwerk gibt, und Job-Images mit Dateien, die nicht root gehören — die meisten Ubuntu-basierten Images — ließen sich nicht entpacken. Außerdem wird beim Start des Dienstes der zurückgebliebene Laufzeitzustand der Engine bereinigt, sodass ein Neustart des Servers den Runner nicht mehr in einer Endlosschleife hängen lässt, in der er keine Jobs annimmt. Die Statusprüfung zeigt jetzt an, ob der Runner tatsächlich läuft.
 
 Erläuterung der inkompatiblen Änderungen: https://forgejo.org/2026-08-runner-release-v13/
 
@@ -54,7 +54,7 @@ Duże wydanie, które czyni Forgejo Actions bardziej rygorystycznym i bezpieczny
 - Logowanie do rejestrów kontenerów pochodzi teraz z \`jobs.<job_id>.container.credentials\`, a nie z sekretów \`DOCKER_USERNAME\` i \`DOCKER_PASSWORD\`.
 - Naprawiono również: podszywanie się pod autora commita przez \`refs/replace/*\` podczas pobierania akcji przez zadanie.
 
-Pakowanie: to wydanie naprawia też dwa problemy wbudowanego silnika Podman: zadania kończyły się niepowodzeniem przed pierwszym krokiem, bo nie mógł on otworzyć urządzenia tunelowego dającego sieć każdemu kontenerowi zadania, a obrazy zadań zawierające pliki nienależące do roota — czyli większość opartych na Ubuntu — nie dawały się rozpakować. Czyści też pozostały stan uruchomieniowy silnika przy starcie usługi, dzięki czemu ponowne uruchomienie serwera nie zostawia już runnera w pętli restartów bez pobierania zadań.
+Pakowanie: to wydanie naprawia też dwa problemy wbudowanego silnika Podman: zadania kończyły się niepowodzeniem przed pierwszym krokiem, bo nie mógł on otworzyć urządzenia tunelowego dającego sieć każdemu kontenerowi zadania, a obrazy zadań zawierające pliki nienależące do roota — czyli większość opartych na Ubuntu — nie dawały się rozpakować. Czyści też pozostały stan uruchomieniowy silnika przy starcie usługi, dzięki czemu ponowne uruchomienie serwera nie zostawia już runnera w pętli restartów bez pobierania zadań. Kontrola stanu pokazuje teraz, czy runner faktycznie działa.
 
 Wyjaśnienie zmian niezgodnych wstecz: https://forgejo.org/2026-08-runner-release-v13/
 
@@ -68,7 +68,7 @@ Une version majeure qui rend Forgejo Actions plus strict et plus sûr. Vérifiez
 - Les connexions aux registres de conteneurs proviennent maintenant de \`jobs.<job_id>.container.credentials\` au lieu des secrets \`DOCKER_USERNAME\` et \`DOCKER_PASSWORD\`.
 - Également corrigé : l'usurpation de commit via \`refs/replace/*\` lorsqu'une tâche récupère une action.
 
-Empaquetage : cette version corrige aussi deux problèmes du moteur Podman intégré : les jobs échouaient avant leur première étape car il ne parvenait pas à ouvrir le périphérique tunnel qui donne un réseau à chaque conteneur de job, et les images de job contenant des fichiers n'appartenant pas à root — la plupart des images basées sur Ubuntu — ne se décompressaient pas. Elle nettoie aussi l'état d'exécution laissé par le moteur au démarrage du service, de sorte que redémarrer le serveur ne laisse plus le runner redémarrer en boucle sans jamais prendre de jobs.
+Empaquetage : cette version corrige aussi deux problèmes du moteur Podman intégré : les jobs échouaient avant leur première étape car il ne parvenait pas à ouvrir le périphérique tunnel qui donne un réseau à chaque conteneur de job, et les images de job contenant des fichiers n'appartenant pas à root — la plupart des images basées sur Ubuntu — ne se décompressaient pas. Elle nettoie aussi l'état d'exécution laissé par le moteur au démarrage du service, de sorte que redémarrer le serveur ne laisse plus le runner redémarrer en boucle sans jamais prendre de jobs. La vérification d'état indique désormais si l'exécuteur fonctionne réellement.
 
 Explication des changements incompatibles : https://forgejo.org/2026-08-runner-release-v13/
 

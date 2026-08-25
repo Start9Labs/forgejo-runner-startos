@@ -123,13 +123,13 @@ None. This package raises no tasks, so the service is never held on a prompt and
 
 ## Health Checks
 
-One check, and it reports configuration rather than liveness.
+One check, on the `primary` daemon.
 
-| Check              | Method                                      | Grace Period |
-| ------------------ | ------------------------------------------- | ------------ |
-| `primary` "Runner" | Whether both the UUID and the token are set | 60 seconds   |
+| Check              | Method                                                                      | Grace Period |
+| ------------------ | --------------------------------------------------------------------------- | ------------ |
+| `primary` "Runner" | Credentials set, then the runner process alive and the Podman API answering | 60 seconds   |
 
-It polls slowly, because the thing it reports changes only when you change it. A failure here means the runner has not been given credentials — it names the action to run. A pass means the runner is configured; whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
+Without credentials it fails and names the action to run. With them it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
 
 ## Backups and Restore
 
@@ -178,5 +178,5 @@ actions:
   - configure
 tasks: []
 health_checks:
-  - primary # displayed "Runner"; reports whether credentials are set
+  - primary # displayed "Runner"; credentials, then runner + engine liveness
 ```
