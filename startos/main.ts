@@ -102,6 +102,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
+    .addOneshot('clean-runtime', {
+      // XDG_RUNTIME_DIR is on the persistent volume, so the boot ID podman
+      // caches there survives a reboot and podman refuses to start against it.
+      subcontainer,
+      exec: {
+        command: ['rm', '-rf', `${DATA_DIR}/runner/run`],
+        user: 'root',
+      },
+      requires: ['own-data'],
+    })
     .addDaemon('primary', {
       subcontainer,
       exec: {
@@ -134,6 +144,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
                 ),
               },
       },
-      requires: ['own-data', 'device-perms'],
+      requires: ['own-data', 'device-perms', 'clean-runtime'],
     })
 })
