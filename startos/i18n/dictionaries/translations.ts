@@ -23,6 +23,7 @@ export default {
     18: 'Configuración del ejecutor guardada. Reinicie el servicio para aplicarla.',
     19: 'Forgejo aún no es accesible en la red interna. El ejecutor se conectará una vez que su dependencia de Forgejo esté en ejecución.',
     20: 'El ejecutor no está en ejecución',
+    21: 'Forgejo Actions debe estar activado para que Forgejo Runner pueda ejecutar trabajos.',
   },
   de_DE: {
     0: 'Dieses Gerät erfüllt nicht die Mindestanforderungen zum Ausführen von CI-Aufträgen (4 GB RAM und 2 CPU-Kerne).',
@@ -46,6 +47,7 @@ export default {
     18: 'Runner-Konfiguration gespeichert. Starten Sie den Dienst neu, um sie anzuwenden.',
     19: 'Forgejo ist im internen Netzwerk noch nicht erreichbar. Der Runner verbindet sich, sobald seine Forgejo-Abhängigkeit läuft.',
     20: 'Der Runner läuft nicht',
+    21: 'Forgejo Actions muss aktiviert sein, damit Forgejo Runner Jobs ausführen kann.',
   },
   pl_PL: {
     0: 'To urządzenie nie spełnia minimalnych wymagań do uruchamiania zadań CI (4 GB RAM i 2 rdzenie CPU).',
@@ -69,6 +71,7 @@ export default {
     18: 'Konfiguracja runnera zapisana. Uruchom ponownie usługę, aby ją zastosować.',
     19: 'Forgejo nie jest jeszcze osiągalne w sieci wewnętrznej. Runner połączy się, gdy jego zależność Forgejo będzie uruchomiona.',
     20: 'Runner nie działa',
+    21: 'Forgejo Actions musi być włączone, aby Forgejo Runner mógł wykonywać zadania.',
   },
   fr_FR: {
     0: 'Cet appareil ne répond pas aux exigences minimales pour exécuter des tâches CI (4 Go de RAM et 2 cœurs de CPU).',
@@ -92,5 +95,6 @@ export default {
     18: "Configuration de l'exécuteur enregistrée. Redémarrez le service pour l'appliquer.",
     19: "Forgejo n'est pas encore accessible sur le réseau interne. L'exécuteur se connectera une fois que sa dépendance Forgejo sera en cours d'exécution.",
     20: "L'exécuteur n'est pas en cours d'exécution",
+    21: 'Forgejo Actions doit être activé pour que Forgejo Runner puisse exécuter des tâches.',
   },
 } satisfies Record<string, LangDict>
