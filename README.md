@@ -87,6 +87,8 @@ One, and it is required in the strong sense.
 
 The health check is required as well as "running", because the runner talks to Forgejo's HTTP API — a Forgejo that is up but not yet serving is no use to it.
 
+Forgejo Actions must also be enabled. The package raises a critical task on Forgejo's **Configure** action whenever Enable Actions is off, which holds Forgejo stopped until it is turned back on.
+
 **This runner only ever serves the Forgejo on this device.** The address is resolved from Forgejo's own binding over the service bridge; there is no field for a remote forge. If Forgejo is not reachable, `main` refuses to start with a message saying so rather than starting a runner that cannot register.
 
 ## Network Access and Interfaces
@@ -119,7 +121,11 @@ Connects the runner to Forgejo and sets how it advertises itself.
 
 ## Tasks
 
-None. This package raises no tasks, so the service is never held on a prompt and its ordinary controls are always available.
+None of its own, so the service is never held on a prompt and its ordinary controls are always available. It raises one on its dependency:
+
+| Task      | On      | Severity   | Raised when                     | Cleared when                |
+| --------- | ------- | ---------- | ------------------------------- | --------------------------- |
+| Configure | Forgejo | `critical` | Forgejo's Enable Actions is off | Enable Actions is turned on |
 
 ## Health Checks
 
@@ -176,7 +182,8 @@ dependencies:
 interfaces: {} # none; the runner accepts no inbound connections
 actions:
   - configure
-tasks: []
+tasks:
+  - { package: forgejo, action: configure, severity: critical } # while Forgejo Actions is disabled
 health_checks:
   - primary # displayed "Runner"; credentials, then runner + engine liveness
 ```

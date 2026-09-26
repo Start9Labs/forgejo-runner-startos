@@ -10,7 +10,7 @@ A CI/CD runner that executes Forgejo Actions workflows for the **Forgejo on this
 
 ## Getting set up
 
-This runner serves the Forgejo on the same device, so install and start **Forgejo** first.
+This runner serves the Forgejo on the same device, so install and start **Forgejo** first, with Forgejo Actions enabled (the default).
 
 1. In Forgejo, go to **Site / Organization / Repository Settings → Actions → Runners → Create new Runner**. Copy the **UUID** and the **token** it shows you.
 2. Run the **Configure** action here and paste in the UUID and token. Adjust the labels and concurrent-jobs count if you like — the default `ubuntu-latest` label runs jobs in a standard Ubuntu image.
