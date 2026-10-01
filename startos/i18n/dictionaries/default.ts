@@ -23,6 +23,7 @@ const dict = {
   'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.': 19,
   'The runner is not running': 20,
   'Forgejo Actions must be enabled for Forgejo Runner to run jobs.': 21,
+  'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.': 22,
 }
 
 export type I18nKey = keyof typeof dict
