@@ -18,6 +18,8 @@ This runner serves the Forgejo on the same device, so install and start **Forgej
 
 > Forgejo v12 replaced the old single-use registration token with durable runner credentials, so the UUID + token you paste here keep working — there is nothing to refresh between restarts.
 
+If Forgejo is reinstalled, it no longer knows this runner: the **Runner** health check asks you to create a new runner in Forgejo, enter its UUID and token in **Configure**, and restart.
+
 ## Using Forgejo Runner
 
 Once it is online, Forgejo dispatches workflow jobs to it automatically — there is nothing to drive here day to day. Follow progress and read job logs in Forgejo's **Actions** tab; here, the **Runner** health check shows whether it is up, and the service logs show startup and connection.

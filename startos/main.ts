@@ -6,6 +6,7 @@ import {
 import { i18n } from './i18n'
 import { sdk } from './sdk'
 import { storeJson } from './fileModels/store.json'
+import { rejectedUuid } from './fileModels/rejectedUuid'
 import {
   DATA_DIR,
   EMULATION_IMAGE,
@@ -134,27 +135,35 @@ export const main = sdk.setupMain(async ({ effects }) => {
         gracePeriod: 60000,
         trigger: sdk.trigger.cooldownTrigger(30000),
         fn: async () =>
-          configured
-            ? sdk.healthCheck.runHealthScript(
-                [
-                  'bash',
-                  '-c',
-                  // `comm` is 15 characters wide, which `forgejo-runner` fits.
-                  `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && podman --remote --url unix://${DATA_DIR}/runner/run/podman/podman.sock info >/dev/null`,
-                ],
-                subcontainer,
-                {
-                  timeout: 10000,
-                  message: () => i18n('Runner is running'),
-                  errorMessage: i18n('The runner is not running'),
-                },
-              )
-            : {
+          !configured
+            ? {
                 result: 'failure',
                 message: i18n(
                   'Run the Configure action to connect this runner to a Forgejo instance',
                 ),
-              },
+              }
+            : (await rejectedUuid.read().const(effects))?.trim() ===
+                store.runnerUuid
+              ? {
+                  result: 'failure',
+                  message: i18n(
+                    'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
+                  ),
+                }
+              : sdk.healthCheck.runHealthScript(
+                  [
+                    'bash',
+                    '-c',
+                    // `comm` is 15 characters wide, which `forgejo-runner` fits.
+                    `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && podman --remote --url unix://${DATA_DIR}/runner/run/podman/podman.sock info >/dev/null`,
+                  ],
+                  subcontainer,
+                  {
+                    timeout: 10000,
+                    message: () => i18n('Runner is running'),
+                    errorMessage: i18n('The runner is not running'),
+                  },
+                ),
       },
       requires: ['own-data', 'device-perms', 'clean-runtime'],
     })

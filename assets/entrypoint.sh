@@ -66,4 +66,31 @@ awk -v url="$INSTANCE_URL" -v uuid="$RUNNER_UUID" -v token="$RUNNER_TOKEN" -v la
   }
 ' "$CONFIG" >"$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
 
-exec forgejo-runner daemon --config "$CONFIG"
+REJECTED="$DATA/rejected-uuid"
+if [ "$(cat "$REJECTED" 2>/dev/null)" = "$RUNNER_UUID" ]; then
+  echo "forgejo-runner: Forgejo no longer recognizes this runner. Create a new" \
+       "runner in Forgejo, enter its UUID and token in Configure, then restart." >&2
+  exec sleep infinity
+fi
+rm -f "$REJECTED"
+
+LOG="$DATA/run/daemon.log"
+exec 3> >(tee "$LOG")
+tee_pid=$!
+forgejo-runner daemon --config "$CONFIG" >&3 2>&1 &
+pid=$!
+exec 3>&-
+trap 'kill -TERM "$pid" 2>/dev/null' TERM INT
+status=0
+wait "$pid" || status=$?
+while kill -0 "$pid" 2>/dev/null; do status=0; wait "$pid" || status=$?; done
+wait "$tee_pid" || true
+
+# Forgejo answers "unregistered runner" once its database no longer holds this UUID.
+if grep -q 'unregistered runner' "$LOG"; then
+  printf '%s' "$RUNNER_UUID" >"$REJECTED"
+  echo "forgejo-runner: Forgejo no longer recognizes this runner. Create a new" \
+       "runner in Forgejo, enter its UUID and token in Configure, then restart." >&2
+  exec sleep infinity
+fi
+exit "$status"
