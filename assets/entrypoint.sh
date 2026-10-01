@@ -87,7 +87,7 @@ while kill -0 "$pid" 2>/dev/null; do status=0; wait "$pid" || status=$?; done
 wait "$tee_pid" || true
 
 # Forgejo answers "unregistered runner" once its database no longer holds this UUID.
-if grep -q 'unregistered runner' "$LOG"; then
+if grep -qE '^Error: ([a-z_]+: )?unregistered runner$' "$LOG"; then
   printf '%s' "$RUNNER_UUID" >"$REJECTED"
   echo "forgejo-runner: Forgejo no longer recognizes this runner. Create a new" \
        "runner in Forgejo, enter its UUID and token in Configure, then restart." >&2
