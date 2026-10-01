@@ -142,8 +142,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
                   'Run the Configure action to connect this runner to a Forgejo instance',
                 ),
               }
-            : (await rejectedUuid.read().const(effects))?.trim() ===
-                store.runnerUuid
+            : (await rejectedUuid.read().once())?.trim() === store.runnerUuid
               ? {
                   result: 'failure',
                   message: i18n(
