@@ -24,6 +24,7 @@ export default {
     19: 'Forgejo aún no es accesible en la red interna. El ejecutor se conectará una vez que su dependencia de Forgejo esté en ejecución.',
     20: 'El ejecutor no está en ejecución',
     21: 'Forgejo Actions debe estar activado para que Forgejo Runner pueda ejecutar trabajos.',
+    22: 'Forgejo ya no reconoce este ejecutor. Cree un nuevo ejecutor en Forgejo, introduzca su UUID y su token en la acción Configurar y reinicie el servicio.',
   },
   de_DE: {
     0: 'Dieses Gerät erfüllt nicht die Mindestanforderungen zum Ausführen von CI-Aufträgen (4 GB RAM und 2 CPU-Kerne).',
@@ -48,6 +49,7 @@ export default {
     19: 'Forgejo ist im internen Netzwerk noch nicht erreichbar. Der Runner verbindet sich, sobald seine Forgejo-Abhängigkeit läuft.',
     20: 'Der Runner läuft nicht',
     21: 'Forgejo Actions muss aktiviert sein, damit Forgejo Runner Jobs ausführen kann.',
+    22: 'Forgejo erkennt diesen Runner nicht mehr. Erstellen Sie in Forgejo einen neuen Runner, geben Sie dessen UUID und Token in der Aktion „Konfigurieren“ ein und starten Sie den Dienst neu.',
   },
   pl_PL: {
     0: 'To urządzenie nie spełnia minimalnych wymagań do uruchamiania zadań CI (4 GB RAM i 2 rdzenie CPU).',
@@ -72,6 +74,7 @@ export default {
     19: 'Forgejo nie jest jeszcze osiągalne w sieci wewnętrznej. Runner połączy się, gdy jego zależność Forgejo będzie uruchomiona.',
     20: 'Runner nie działa',
     21: 'Forgejo Actions musi być włączone, aby Forgejo Runner mógł wykonywać zadania.',
+    22: 'Forgejo nie rozpoznaje już tego runnera. Utwórz nowy runner w Forgejo, wpisz jego UUID i token w akcji Konfiguruj, a następnie uruchom usługę ponownie.',
   },
   fr_FR: {
     0: 'Cet appareil ne répond pas aux exigences minimales pour exécuter des tâches CI (4 Go de RAM et 2 cœurs de CPU).',
@@ -96,5 +99,6 @@ export default {
     19: "Forgejo n'est pas encore accessible sur le réseau interne. L'exécuteur se connectera une fois que sa dépendance Forgejo sera en cours d'exécution.",
     20: "L'exécuteur n'est pas en cours d'exécution",
     21: 'Forgejo Actions doit être activé pour que Forgejo Runner puisse exécuter des tâches.',
+    22: "Forgejo ne reconnaît plus cet exécuteur. Créez un nouvel exécuteur dans Forgejo, saisissez son UUID et son jeton dans l'action Configurer, puis redémarrez le service.",
   },
 } satisfies Record<string, LangDict>

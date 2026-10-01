@@ -58,11 +58,12 @@ One volume, shared between the package's state and the runner's working area.
 
 ## File Models
 
-One model, holding the runner's registration and its job configuration.
+Two models: the runner's registration and job configuration, and a marker the entrypoint leaves when Forgejo rejects those credentials.
 
-| File         | Format | Modelled                | Written by                           |
-| ------------ | ------ | ----------------------- | ------------------------------------ |
-| `store.json` | JSON   | Yes — `FileHelper.json` | Every init, and the Configure action |
+| File                   | Format | Modelled                  | Written by                                         |
+| ---------------------- | ------ | ------------------------- | -------------------------------------------------- |
+| `store.json`           | JSON   | Yes — `FileHelper.json`   | Every init, and the Configure action               |
+| `runner/rejected-uuid` | Text   | Yes — `FileHelper.string` | `entrypoint.sh`, when Forgejo rejects `runnerUuid` |
 
 | Key                         | Notes                                                                                             |
 | --------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -71,7 +72,7 @@ One model, holding the runner's registration and its job configuration.
 | `capacity`                  | How many jobs run at once                                                                         |
 | `emulation`                 | Whether to also advertise the other CPU architecture                                              |
 
-The model **strips keys it does not declare**, and nothing else writes the file. Everything reaches the runner as environment on each start, so there is no configuration file on disk to inspect or correct — including the connection to Forgejo, whose address is resolved rather than stored.
+`store.json`'s model **strips keys it does not declare**, and nothing else writes the file. Everything reaches the runner as environment on each start, so there is no configuration file on disk to inspect or correct — including the connection to Forgejo, whose address is resolved rather than stored.
 
 `USER` is set to the unprivileged account the daemon runs as, not left at the container's inherited `root`. The container engine resolves its subordinate UID and GID ranges by `$USER`, and finding none for `root` it falls back to a single-ID mapping — under which any job image carrying a file not owned by root fails to unpack.
 
@@ -131,11 +132,11 @@ None of its own, so the service is never held on a prompt and its ordinary contr
 
 One check, on the `primary` daemon.
 
-| Check              | Method                                                                      | Grace Period |
-| ------------------ | --------------------------------------------------------------------------- | ------------ |
-| `primary` "Runner" | Credentials set, then the runner process alive and the Podman API answering | 60 seconds   |
+| Check              | Method                                                                                                  | Grace Period |
+| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------ |
+| `primary` "Runner" | Credentials set and not rejected by Forgejo, then the runner process alive and the Podman API answering | 60 seconds   |
 
-Without credentials it fails and names the action to run. With them it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
+Without credentials it fails and names the action to run. It fails the same way while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
 
 ## Backups and Restore
 
