@@ -72,7 +72,7 @@ Two models: the runner's registration and job configuration, and a marker the en
 | `capacity`                  | How many jobs run at once                                                                         |
 | `emulation`                 | Whether to also advertise the other CPU architecture                                              |
 
-`store.json`'s model **strips keys it does not declare**, and nothing else writes the file. Everything reaches the runner as environment on each start, so there is no configuration file on disk to inspect or correct — including the connection to Forgejo, whose address is resolved rather than stored.
+Nothing but the package writes `store.json`. Everything reaches the runner as environment on each start, so there is no configuration file on disk to inspect or correct — including the connection to Forgejo, whose address is resolved rather than stored.
 
 `USER` is set to the unprivileged account the daemon runs as, not left at the container's inherited `root`. The container engine resolves its subordinate UID and GID ranges by `$USER`, and finding none for `root` it falls back to a single-ID mapping — under which any job image carrying a file not owned by root fails to unpack.
 
@@ -116,7 +116,7 @@ One action.
 Connects the runner to Forgejo and sets how it advertises itself.
 
 - **What it changes:** every field in `store.json` — the credentials, labels, concurrency, and the emulation toggle.
-- **Cost:** the write is instant, but **it does not apply until the service restarts.** The action says so in its result rather than restarting for you.
+- **Cost:** `main` reads the whole store reactively, so **saving a change restarts the runner if it is running.** A stopped service picks the values up when it next starts.
 - **Repeat safety:** idempotent; the form is pre-filled with the current values and replaces them wholesale.
 - **Input notes:** labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
 
@@ -148,11 +148,11 @@ The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. No du
 ## Limitations and Differences
 
 1. **Only the Forgejo on this device.** There is no field for a remote forge; the address is resolved from the local dependency.
-2. **Configuration applies on restart**, not immediately.
+2. **Saving Configure restarts a running runner**; the runner's configuration is regenerated on each start, never reloaded live.
 3. **The service refuses to start on small hardware** — under 2 cores or roughly a 4 GB machine.
 4. **Emulated jobs are much slower than native.** The toggle exists for occasional cross-architecture work; a native runner per architecture is the better arrangement for regular builds.
 5. **Jobs run in a rootless engine inside the service**, which requires the two device grants named above, and on StartOS 0.4.0.1 and earlier a startup step to make those device nodes readable by the unprivileged user.
-6. **No riscv64 build.** x86_64 and aarch64 only.
+6. **No riscv64 build.** x86_64 and aarch64 only, and the image is not run under emulation on any other architecture.
 
 ---
 
