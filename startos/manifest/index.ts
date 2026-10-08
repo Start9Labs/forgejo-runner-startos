@@ -1,5 +1,5 @@
 import { setupManifest } from '@start9labs/start-sdk'
-import { dependencyDescription, long, short } from './i18n'
+import { long, short } from './i18n'
 
 export const manifest = setupManifest({
   id: 'forgejo-runner',
@@ -15,16 +15,7 @@ export const manifest = setupManifest({
     main: {
       source: { dockerBuild: { workdir: '.' } },
       arch: ['x86_64', 'aarch64'],
-    },
-  },
-  dependencies: {
-    forgejo: {
-      description: dependencyDescription,
-      optional: false,
-      metadata: {
-        title: 'Forgejo',
-        icon: 'https://raw.githubusercontent.com/Start9Labs/forgejo-startos/master/icon.svg',
-      },
+      emulateMissing: false,
     },
   },
   // Run a rootless Podman engine inside the service to sandbox each CI job.
