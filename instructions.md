@@ -14,7 +14,7 @@ This runner serves the Forgejo on the same device, so install and start **Forgej
 
 1. In Forgejo, go to **Site / Organization / Repository Settings → Actions → Runners → Create new Runner**. Copy the **UUID** and the **token** it shows you.
 2. Run the **Configure** action here and paste in the UUID and token. Adjust the labels and concurrent-jobs count if you like — the default `ubuntu-latest` label runs jobs in a standard Ubuntu image.
-3. Start (or restart) the service. It connects to Forgejo and begins picking up jobs; it should appear as **Online** in Forgejo's Runners.
+3. Start the service if it is not running; saving restarts a running one. It connects to Forgejo and begins picking up jobs; it should appear as **Online** in Forgejo's Runners.
 
 > Forgejo v12 replaced the old single-use registration token with durable runner credentials, so the UUID + token you paste here keep working — there is nothing to refresh between restarts.
 

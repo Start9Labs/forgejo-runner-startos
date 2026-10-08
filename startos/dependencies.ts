@@ -1,13 +1,20 @@
 import { configure } from 'forgejo-startos/startos/actions/configure'
 import { i18n } from './i18n'
+import { dependencyDescription } from './manifest/i18n'
 import { sdk } from './sdk'
 
-// This runner only ever serves the Forgejo on this same device — a hard
-// dependency. A box that wants its own CI runs its own runner; we don't reach
-// across to a remote forge. Forgejo must be running AND its web interface
-// (the 'primary' health check) reachable, since the runner registers and polls
-// over Forgejo's HTTP API.
-export const setDependencies = sdk.setupDependencies(async ({ effects }) => {
+// The runner registers and polls over Forgejo's HTTP API, so it needs Forgejo
+// running with its web interface (the 'primary' health check) reachable.
+const forgejo = sdk.Dependency.required('forgejo', {
+  description: dependencyDescription,
+  metadata: {
+    title: 'Forgejo',
+    icon: 'https://raw.githubusercontent.com/Start9Labs/forgejo-startos/master/icon.svg',
+  },
+  versionRange: '>=16.0.5:1',
+  kind: 'running',
+  healthChecks: ['primary'],
+}).withInit(async (effects) => {
   await sdk.action.createTask(effects, 'forgejo', configure, 'critical', {
     input: {
       kind: 'partial',
@@ -19,12 +26,6 @@ export const setDependencies = sdk.setupDependencies(async ({ effects }) => {
     ),
     when: { condition: 'input-not-matches', once: false },
   })
-
-  return {
-    forgejo: {
-      kind: 'running',
-      versionRange: '>=16.0.5:1',
-      healthChecks: ['primary'],
-    },
-  }
 })
+
+export const dependencies = sdk.Dependencies.of().addDependency(forgejo)

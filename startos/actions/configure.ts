@@ -32,7 +32,9 @@ const inputSpec = InputSpec.of({
   }),
   capacity: Value.number({
     name: i18n('Concurrent Jobs'),
-    description: i18n('How many jobs this runner executes at once.'),
+    description: i18n(
+      "How many jobs run at the same time. Each job is a full build in its own container, and all of them share this device's CPU and memory.",
+    ),
     required: true,
     default: 1,
     min: 1,
@@ -53,7 +55,7 @@ export const configure = sdk.Action.withInput(
   async ({ effects }) => ({
     name: i18n('Configure'),
     description: i18n(
-      'Connect this runner to the Forgejo on this device. Saving applies on the next restart.',
+      'Connect this runner to the Forgejo on this device. Saving a change restarts the runner if it is running.',
     ),
     warning: null,
     allowedStatuses: 'any',
@@ -87,9 +89,7 @@ export const configure = sdk.Action.withInput(
     return {
       version: '1',
       title: i18n('Saved'),
-      message: i18n(
-        'Runner configuration saved. Restart the service to apply.',
-      ),
+      message: i18n('Runner configuration saved.'),
       result: null,
     }
   },
