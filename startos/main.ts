@@ -51,10 +51,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
     )
   const forgeUrl = `http://${forgeBridge}`
 
-  // The connection is declared in config.yaml from these credentials, so having
-  // both is the configured signal — `register` is gone, hence no `.runner`.
-  const configured = !!(store.runnerUuid && store.runnerToken)
-
   // Emulation: also advertise a label for the other CPU architecture, pinned to
   // that platform via forgejo-runner's `?platform=` option so its jobs run under
   // StartOS's host QEMU binfmt. The runner process itself is always native.
@@ -135,34 +131,27 @@ export const main = sdk.setupMain(async ({ effects }) => {
         gracePeriod: 60000,
         trigger: sdk.trigger.cooldownTrigger(30000),
         fn: async () =>
-          !configured
+          (await rejectedUuid.read().once())?.trim() === store.runnerUuid
             ? {
                 result: 'failure',
                 message: i18n(
-                  'Run the Configure action to connect this runner to a Forgejo instance',
+                  'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
                 ),
               }
-            : (await rejectedUuid.read().once())?.trim() === store.runnerUuid
-              ? {
-                  result: 'failure',
-                  message: i18n(
-                    'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
-                  ),
-                }
-              : sdk.healthCheck.runHealthScript(
-                  [
-                    'bash',
-                    '-c',
-                    // `comm` is 15 characters wide, which `forgejo-runner` fits.
-                    `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && podman --remote --url unix://${DATA_DIR}/runner/run/podman/podman.sock info >/dev/null`,
-                  ],
-                  subcontainer,
-                  {
-                    timeout: 10000,
-                    message: () => i18n('Runner is running'),
-                    errorMessage: i18n('The runner is not running'),
-                  },
-                ),
+            : sdk.healthCheck.runHealthScript(
+                [
+                  'bash',
+                  '-c',
+                  // `comm` is 15 characters wide, which `forgejo-runner` fits.
+                  `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && podman --remote --url unix://${DATA_DIR}/runner/run/podman/podman.sock info >/dev/null`,
+                ],
+                subcontainer,
+                {
+                  timeout: 10000,
+                  message: () => i18n('Runner is running'),
+                  errorMessage: i18n('The runner is not running'),
+                },
+              ),
       },
       requires: ['own-data', 'device-perms', 'clean-runtime'],
     })

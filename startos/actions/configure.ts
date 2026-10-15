@@ -79,8 +79,8 @@ export const configure = sdk.Action.withInput(
 
   async ({ effects, input }) => {
     await storeJson.merge(effects, {
-      runnerUuid: input.runnerUuid ?? '',
-      runnerToken: input.runnerToken ?? '',
+      runnerUuid: input.runnerUuid,
+      runnerToken: input.runnerToken,
       labels: input.labels ?? '',
       capacity: input.capacity,
       emulation: input.emulation,
