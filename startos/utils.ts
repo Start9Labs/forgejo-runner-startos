@@ -25,9 +25,3 @@ export const mount = sdk.Mounts.of().mountVolume({
   mountpoint: DATA_DIR,
   readonly: false,
 })
-
-export function hasRunnerCredentials(
-  credentials: { runnerUuid: string; runnerToken: string } | null,
-) {
-  return !!(credentials?.runnerUuid && credentials.runnerToken)
-}

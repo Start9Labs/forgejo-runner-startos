@@ -118,7 +118,7 @@ Connects the runner to Forgejo and sets how it advertises itself.
 - **What it changes:** every field in `store.json` — the credentials, labels, concurrency, and the emulation toggle.
 - **Cost:** `main` reads the whole store reactively, so **saving a change restarts the runner if it is running.** A stopped service picks the values up when it next starts.
 - **Repeat safety:** idempotent; the form is pre-filled with the current values and replaces them wholesale.
-- **Input notes:** the UUID and token must both be nonempty; blank submissions are rejected without changing the store. Labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
+- **Input notes:** labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
 
 ## Tasks
 
