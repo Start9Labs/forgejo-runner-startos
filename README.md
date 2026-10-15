@@ -98,14 +98,14 @@ None. The runner dials out to its forge and pulls job images; it accepts no inbo
 
 ## Installation and First-Run Flow
 
-Install seeds the store with defaults and nothing else. There is no task, and the service starts — but it will not do any work until you connect it.
+Install seeds the store with defaults. On every init, a watcher raises a critical **Configure** task if either the runner UUID or token is missing, blocking startup until both are saved. Already-configured installs and restores do not receive a setup task.
 
 Two gates apply before that, both enforced rather than advisory:
 
 1. **Hardware.** `main` refuses to start on a device below 2 CPU cores or roughly a 4 GB machine's worth of memory, because every job is a full build. The message says so explicitly rather than failing obscurely later.
 2. **Forgejo.** It must be installed and serving.
 
-Then run [Configure](#actions) with the UUID and token Forgejo shows under **Settings → Actions → Runners → Create new Runner**, and restart. Until then the runner's health check reports a failure telling you to do exactly that.
+Complete the **Configure** task with the UUID and token Forgejo shows under **Settings → Actions → Runners → Create new Runner**, then start the service.
 
 ## Actions
 
@@ -118,15 +118,16 @@ Connects the runner to Forgejo and sets how it advertises itself.
 - **What it changes:** every field in `store.json` — the credentials, labels, concurrency, and the emulation toggle.
 - **Cost:** `main` reads the whole store reactively, so **saving a change restarts the runner if it is running.** A stopped service picks the values up when it next starts.
 - **Repeat safety:** idempotent; the form is pre-filled with the current values and replaces them wholesale.
-- **Input notes:** labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
+- **Input notes:** the UUID and token must both be nonempty; blank submissions are rejected without changing the store. Labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
 
 ## Tasks
 
-None of its own, so the service is never held on a prompt and its ordinary controls are always available. It raises one on its dependency:
+One setup task of its own and one on its dependency:
 
-| Task      | On      | Severity   | Raised when                     | Cleared when                |
-| --------- | ------- | ---------- | ------------------------------- | --------------------------- |
-| Configure | Forgejo | `critical` | Forgejo's Enable Actions is off | Enable Actions is turned on |
+| Task      | On             | Severity   | Raised when                      | Cleared when                     |
+| --------- | -------------- | ---------- | -------------------------------- | -------------------------------- |
+| Configure | Forgejo Runner | `critical` | Runner UUID or token is missing  | Configure saves both credentials |
+| Configure | Forgejo        | `critical` | Forgejo's Enable Actions is off  | Enable Actions is turned on      |
 
 ## Health Checks
 
@@ -134,9 +135,9 @@ One check, on the `primary` daemon.
 
 | Check              | Method                                                                                                  | Grace Period |
 | ------------------ | ------------------------------------------------------------------------------------------------------- | ------------ |
-| `primary` "Runner" | Credentials set and not rejected by Forgejo, then the runner process alive and the Podman API answering | 60 seconds   |
+| `primary` "Runner" | Credentials not rejected by Forgejo, then the runner process alive and the Podman API answering | 60 seconds   |
 
-Without credentials it fails and names the action to run. It fails the same way while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
+Missing credentials are handled by the setup task, not readiness. The check fails while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
 
 ## Backups and Restore
 
@@ -184,7 +185,8 @@ interfaces: {} # none; the runner accepts no inbound connections
 actions:
   - configure
 tasks:
+  - { package: forgejo-runner, action: configure, severity: critical } # while either credential is missing
   - { package: forgejo, action: configure, severity: critical } # while Forgejo Actions is disabled
 health_checks:
-  - primary # displayed "Runner"; credentials, then runner + engine liveness
+  - primary # displayed "Runner"; rejected credentials, then runner + engine liveness
 ```

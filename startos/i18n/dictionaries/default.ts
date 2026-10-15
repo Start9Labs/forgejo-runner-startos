@@ -24,6 +24,7 @@ const dict = {
   'The runner is not running': 20,
   'Forgejo Actions must be enabled for Forgejo Runner to run jobs.': 21,
   'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.': 22,
+  'Runner UUID and token are required.': 23,
 }
 
 export type I18nKey = keyof typeof dict

@@ -1,6 +1,7 @@
 import { i18n } from '../i18n'
 import { sdk } from '../sdk'
 import { storeJson } from '../fileModels/store.json'
+import { hasRunnerCredentials } from '../utils'
 
 const { InputSpec, Value } = sdk
 
@@ -78,9 +79,13 @@ export const configure = sdk.Action.withInput(
   },
 
   async ({ effects, input }) => {
+    if (!hasRunnerCredentials(input)) {
+      throw new Error(i18n('Runner UUID and token are required.'))
+    }
+
     await storeJson.merge(effects, {
-      runnerUuid: input.runnerUuid ?? '',
-      runnerToken: input.runnerToken ?? '',
+      runnerUuid: input.runnerUuid,
+      runnerToken: input.runnerToken,
       labels: input.labels ?? '',
       capacity: input.capacity,
       emulation: input.emulation,
