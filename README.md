@@ -124,17 +124,17 @@ Connects the runner to Forgejo and sets how it advertises itself.
 
 One setup task of its own and one on its dependency:
 
-| Task      | On             | Severity   | Raised when                      | Cleared when                     |
-| --------- | -------------- | ---------- | -------------------------------- | -------------------------------- |
-| Configure | Forgejo Runner | `critical` | Runner UUID or token is missing  | Configure saves both credentials |
-| Configure | Forgejo        | `critical` | Forgejo's Enable Actions is off  | Enable Actions is turned on      |
+| Task      | On             | Severity   | Raised when                     | Cleared when                     |
+| --------- | -------------- | ---------- | ------------------------------- | -------------------------------- |
+| Configure | Forgejo Runner | `critical` | Runner UUID or token is missing | Configure saves both credentials |
+| Configure | Forgejo        | `critical` | Forgejo's Enable Actions is off | Enable Actions is turned on      |
 
 ## Health Checks
 
 One check, on the `primary` daemon.
 
-| Check              | Method                                                                                                  | Grace Period |
-| ------------------ | ------------------------------------------------------------------------------------------------------- | ------------ |
+| Check              | Method                                                                                          | Grace Period |
+| ------------------ | ----------------------------------------------------------------------------------------------- | ------------ |
 | `primary` "Runner" | Credentials not rejected by Forgejo, then the runner process alive and the Podman API answering | 60 seconds   |
 
 Missing credentials are handled by the setup task, not readiness. The check fails while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
