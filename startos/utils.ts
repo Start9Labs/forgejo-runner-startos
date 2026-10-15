@@ -13,15 +13,26 @@ export const MIN_CPU_CORES = 2
 // ---- Emulation ----
 // Image advertised by the "Enable Emulation" toggle, pinned to the foreign
 // platform (via forgejo-runner's `?platform=` label option) so its jobs run
-// under StartOS's host QEMU binfmt. The multi-arch catthehacker default.
+// under the engine's namespace-local QEMU binfmt. The multi-arch catthehacker default.
 export const EMULATION_IMAGE = 'ghcr.io/catthehacker/ubuntu:act-22.04'
 
 // ---- Paths (inside the service container) ----
 export const DATA_DIR = '/data'
+export const SCRATCH_DIR = '/scratch'
+export const JOB_SCRATCH_DIR = `${SCRATCH_DIR}/jobs`
+export const RUNTIME_DIR = `${DATA_DIR}/runner/run`
+export const DOCKER_HOST = `unix://${RUNTIME_DIR}/docker.sock`
 
-export const mount = sdk.Mounts.of().mountVolume({
-  volumeId: 'main',
-  subpath: null,
-  mountpoint: DATA_DIR,
-  readonly: false,
-})
+export const mount = sdk.Mounts.of()
+  .mountVolume({
+    volumeId: 'main',
+    subpath: null,
+    mountpoint: DATA_DIR,
+    readonly: false,
+  })
+  .mountVolume({
+    volumeId: 'scratch',
+    subpath: null,
+    mountpoint: SCRATCH_DIR,
+    readonly: false,
+  })

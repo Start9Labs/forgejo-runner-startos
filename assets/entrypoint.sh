@@ -1,6 +1,5 @@
 #!/bin/bash
-# Orchestrates a rootless Podman engine + the Forgejo Runner inside the service
-# container. main.ts passes the forge connection via the environment.
+# main.ts supplies the engine socket and Forgejo connection.
 set -euo pipefail
 
 : "${INSTANCE_URL:=}"
@@ -8,32 +7,13 @@ set -euo pipefail
 : "${RUNNER_TOKEN:=}"
 : "${RUNNER_LABELS:=}"
 : "${RUNNER_CAPACITY:=1}"
+: "${RUNNER_SCRATCH_DIR:?}"
 
 # App-owned working area (chowned by the own-data oneshot); StartOS's own
 # store.json stays at /data and is left untouched.
 DATA=/data/runner
 CONFIG="$DATA/config.yaml"
 cd "$DATA"
-
-# Podman needs a writable XDG_RUNTIME_DIR for its socket + transient state.
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/data/runner/run}"
-mkdir -p "$XDG_RUNTIME_DIR/podman" "$XDG_RUNTIME_DIR/containers" "$DATA/containers/storage"
-chmod 700 "$XDG_RUNTIME_DIR"
-SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
-
-# Bring up the Podman API socket (docker-compatible) the runner drives. Layer
-# store lives on the data volume so job images survive restarts;
-# --cgroup-manager=cgroupfs because there's no user systemd session here.
-podman --root "$DATA/containers/storage" --runroot "$XDG_RUNTIME_DIR/containers" \
-       --cgroup-manager=cgroupfs system service -t 0 "unix://$SOCK" &
-export DOCKER_HOST="unix://$SOCK"
-
-# Wait until the Podman API actually answers — not just the socket file
-# appearing — so the runner daemon doesn't race a half-up socket.
-for _ in $(seq 1 60); do
-  podman --remote --url "unix://$SOCK" info >/dev/null 2>&1 && break
-  sleep 1
-done
 
 # Without credentials the forge connection is incomplete; stay alive so the
 # health check can report 'needs config' instead of crash-looping.
@@ -49,7 +29,14 @@ fi
 # config each start so Configure changes always take effect, then inject our
 # connection under the (otherwise empty) server.connections map.
 forgejo-runner generate-config >"$CONFIG"
-sed -i "s/^  capacity: .*/  capacity: ${RUNNER_CAPACITY}/" "$CONFIG"
+RESOLV_CONF=/etc/resolv.conf
+sed -i \
+  -e "s/^  capacity: .*/  capacity: ${RUNNER_CAPACITY}/" \
+  -e 's/^  privileged: false$/  privileged: true/' \
+  -e 's|^  docker_host: "-"$|  docker_host: "automount"|' \
+  -e "s|^  options:$|  options: \"--volume ${RUNNER_SCRATCH_DIR}:/root/setup-docker-action --volume ${RESOLV_CONF}:${RESOLV_CONF}:ro\"|" \
+  -e "s|^  valid_volumes: \[\]$|  valid_volumes: [\"${RUNNER_SCRATCH_DIR}\", \"${RESOLV_CONF}\"]|" \
+  "$CONFIG"
 awk -v url="$INSTANCE_URL" -v uuid="$RUNNER_UUID" -v token="$RUNNER_TOKEN" -v labels="$RUNNER_LABELS" '
   { print }
   /^  connections:[[:space:]]*$/ && !done {

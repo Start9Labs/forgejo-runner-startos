@@ -9,9 +9,13 @@ import { storeJson } from './fileModels/store.json'
 import { rejectedUuid } from './fileModels/rejectedUuid'
 import {
   DATA_DIR,
+  DOCKER_HOST,
   EMULATION_IMAGE,
+  JOB_SCRATCH_DIR,
   MIN_CPU_CORES,
   MIN_MEMORY_BYTES,
+  RUNTIME_DIR,
+  SCRATCH_DIR,
   mount,
 } from './utils'
 
@@ -51,9 +55,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     )
   const forgeUrl = `http://${forgeBridge}`
 
-  // Emulation: also advertise a label for the other CPU architecture, pinned to
-  // that platform via forgejo-runner's `?platform=` option so its jobs run under
-  // StartOS's host QEMU binfmt. The runner process itself is always native.
+  // Foreign-architecture labels require an explicit platform pin.
   const foreignArch = arch() === 'arm64' ? 'amd64' : 'arm64'
   const labels = [
     ...store.labels.split(',').map((l) => l.trim()),
@@ -75,39 +77,60 @@ export const main = sdk.setupMain(async ({ effects }) => {
 
   return sdk.Daemons.of(effects)
     .addOneshot('own-data', {
-      // The runner runs rootless as 'app' (uid 1000); give it ownership of its
-      // working area on the persistent volume. StartOS's own store.json at
-      // /data is left untouched.
+      // store.json shares the mount and must retain its ownership.
       subcontainer,
       exec: {
         command: [
           'sh',
           '-c',
-          `mkdir -p ${DATA_DIR}/runner && chown -R app:app ${DATA_DIR}/runner`,
+          `mkdir -p ${DATA_DIR}/runner ${JOB_SCRATCH_DIR} && chown app:app ${DATA_DIR}/runner`,
         ],
         user: 'root',
       },
       requires: [],
     })
-    .addOneshot('device-perms', {
-      // StartOS 0.4.0.1 and earlier can hand the service root-only /dev/net/tun
-      // and /dev/fuse; podman opens both as 'app'.
-      subcontainer,
-      exec: {
-        command: ['chmod', '0666', '/dev/net/tun', '/dev/fuse'],
-        user: 'root',
-      },
-      requires: [],
-    })
     .addOneshot('clean-runtime', {
-      // XDG_RUNTIME_DIR is on the persistent volume, so the boot ID podman
-      // caches there survives a reboot and podman refuses to start against it.
+      // Runtime sockets and PID files cannot survive a container restart.
       subcontainer,
       exec: {
-        command: ['rm', '-rf', `${DATA_DIR}/runner/run`],
+        command: [
+          'sh',
+          '-c',
+          `rm -rf ${RUNTIME_DIR} && install -d -o app -g app -m 0700 ${RUNTIME_DIR}`,
+        ],
         user: 'root',
       },
       requires: ['own-data'],
+    })
+    .addDaemon('engine', {
+      subcontainer,
+      exec: {
+        command: [
+          '/usr/local/bin/engine.sh',
+          '--host',
+          DOCKER_HOST,
+          '--group',
+          'app',
+          '--data-root',
+          `${SCRATCH_DIR}/docker`,
+          '--exec-root',
+          `${RUNTIME_DIR}/docker`,
+          '--pidfile',
+          `${RUNTIME_DIR}/docker.pid`,
+        ],
+        user: 'root',
+        env: { BINFMT_DIR: `${RUNTIME_DIR}/binfmt` },
+      },
+      ready: {
+        display: null,
+        fn: () =>
+          sdk.healthCheck.runHealthScript(
+            ['docker', '--host', DOCKER_HOST, 'info'],
+            subcontainer,
+            { timeout: 10000 },
+          ),
+      },
+      requires: ['clean-runtime'],
     })
     .addDaemon('primary', {
       subcontainer,
@@ -120,10 +143,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
           RUNNER_TOKEN: store.runnerToken,
           RUNNER_LABELS: labels,
           RUNNER_CAPACITY: String(store.capacity),
-          XDG_RUNTIME_DIR: `${DATA_DIR}/runner/run`,
-          // podman looks up its subuid/subgid ranges by $USER, which the
-          // container inherits as 'root' regardless of the user it runs as.
-          USER: 'app',
+          DOCKER_HOST,
+          RUNNER_SCRATCH_DIR: JOB_SCRATCH_DIR,
         },
       },
       ready: {
@@ -143,7 +164,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
                   'bash',
                   '-c',
                   // `comm` is 15 characters wide, which `forgejo-runner` fits.
-                  `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && podman --remote --url unix://${DATA_DIR}/runner/run/podman/podman.sock info >/dev/null`,
+                  `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && docker --host ${DOCKER_HOST} info >/dev/null`,
                 ],
                 subcontainer,
                 {
@@ -153,6 +174,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
                 },
               ),
       },
-      requires: ['own-data', 'device-perms', 'clean-runtime'],
+      requires: ['engine'],
     })
 })

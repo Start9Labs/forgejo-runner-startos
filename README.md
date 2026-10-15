@@ -9,7 +9,7 @@
 > upstream documentation is accurate and fully applicable — see the
 > Documentation section of `instructions.md` for links.
 
-[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes Forgejo Actions workflows. This package runs it against the Forgejo on this same device, with a rootless Podman engine inside the service so each job gets its own container.
+[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes Forgejo Actions workflows. This package runs it against the Forgejo on this same device, with a Docker engine inside the service so each job gets its own container.
 
 - **Upstream repo:** <https://code.forgejo.org/forgejo/runner>
 - **Wrapper repo:** <https://github.com/Start9Labs/forgejo-runner-startos>
@@ -35,26 +35,31 @@
 
 ## Image and Container Runtime
 
-The image is built here: upstream's runner binary is copied onto a Debian base carrying a rootless container engine, because the runner needs somewhere to run each job.
+The image is built here: upstream's runner binary is copied onto a Debian base carrying Docker CE, fuse-overlayfs, jq, and git. A digest-pinned `tonistiigi/binfmt` stage supplies the registration helper and static QEMU interpreters.
 
 | Property      | Value                                                                    |
 | ------------- | ------------------------------------------------------------------------ |
-| Image         | Built from `Dockerfile` — upstream's `forgejo-runner` binary plus Podman |
+| Image         | Built from `Dockerfile` — upstream's `forgejo-runner` binary plus Docker CE |
 | Architectures | x86_64, aarch64                                                          |
 | Command       | The repo's `entrypoint.sh`, run as the unprivileged `app` user           |
 | Subcontainer  | `forgejo-runner-sub` — the `primary` daemon, and the one to `attach` to  |
 
-The manifest declares two device grants that this arrangement requires: **userspace filesystems** for the storage driver, and **virtual networking** for job networking. Without either, the nested engine cannot start a job container. The image also carries `git`, because the runner fetches `uses:` actions with the git CLI and every such step fails without it.
+The `engine` daemon runs Docker as root **inside the StartOS service's user namespace**, not as host root. The runner remains the unprivileged `app` user and connects through a group-accessible Unix socket. Job IDs use the service's full 0–65535 mapping, including apt's `nogroup` (65534), without another subordinate-ID namespace.
 
-Three oneshots run as root before the daemon. `own-data` creates the runner's working directory on the volume and hands it to `app`, leaving the rest of the volume alone. `device-perms` re-opens `/dev/net/tun` and `/dev/fuse` to mode 0666: StartOS 0.4.0.1 and earlier can create those granted nodes root-only, and the engine opens both as the unprivileged user. It is idempotent and becomes a no-op once the OS-side fix ships. `clean-runtime` removes the engine's runtime directory. `XDG_RUNTIME_DIR` sits on the persistent volume, so the boot ID podman caches there survives a reboot and podman refuses to start against it. It runs after `own-data` rather than beside it, so the two never walk the same tree at once, and it removes no durable state: the entrypoint recreates the directory on every start, and the image layer store is a sibling that is left alone.
+The manifest grants **userspace filesystems** for Docker's fuse-overlayfs storage driver. `assets/daemon.json` selects that driver and the `runc-nested` runtime. The runtime wrapper removes `net.ipv4.ip_unprivileged_port_start` from OCI specs before invoking runc; reopening that sysctl across the StartOS namespace boundary can fail.
+
+The generated runner configuration enables privileged job containers and mounts the engine socket at `/var/run/docker.sock`. Workflows can therefore control the service's Docker engine, including other jobs and volumes. **Only run trusted workflows.** StartOS's outer user-namespace and AppArmor confinement still apply.
+
+`own-data` prepares the working and scratch directories without recursively changing file ownership. `clean-runtime` recreates the socket/PID directory before `engine` starts; `primary` waits for Docker to answer `info`. Image storage is separate and survives service restarts. The engine entrypoint registers QEMU on a private `binfmt_misc` mount and keeps it mounted for the daemon's lifetime. Registrations belong to the service's user namespace, not the StartOS host.
 
 ## Volume and Data Layout
 
-One volume, shared between the package's state and the runner's working area.
+| Volume | Mount Point | Purpose |
+| ------ | ----------- | ------- |
+| `main` | `/data` | `store.json` and runner registration/configuration under `runner/` |
+| `scratch` | `/scratch` | Docker image storage under `docker/` and nested build-daemon working directories under `jobs/`; excluded from backups |
 
-| Volume | Mount Point | Purpose                                                              |
-| ------ | ----------- | -------------------------------------------------------------------- |
-| `main` | `/data`     | `store.json`, and the runner's own working directory under `runner/` |
+Every job bind-mounts `/scratch/jobs` at `/root/setup-docker-action`, the default runtime base directory of `docker/setup-docker-action`. Its per-invocation directories live on the volume rather than the job's layered root filesystem, allowing the inner Docker daemon to mount its own image layers. Workflows using a different runtime base directory must arrange an equivalent scratch mount. Jobs also receive a read-only bind of the service's `/etc/resolv.conf`; nested Docker daemons must inherit real StartOS DNS servers rather than the outer Docker network's loopback resolver. The action cleans up its runtime data; stopped or interrupted jobs can leave disposable directories behind.
 
 ## File Models
 
@@ -72,11 +77,9 @@ Two models: the runner's registration and job configuration, and a marker the en
 | `capacity`                  | How many jobs run at once                                                                         |
 | `emulation`                 | Whether to also advertise the other CPU architecture                                              |
 
-Nothing but the package writes `store.json`. Everything reaches the runner as environment on each start, so there is no configuration file on disk to inspect or correct — including the connection to Forgejo, whose address is resolved rather than stored.
+Nothing but the package writes `store.json`. The entrypoint generates `/data/runner/config.yaml` from the environment on each start; inspect it for diagnosis, but do not edit it. The connection to Forgejo is resolved rather than stored.
 
-`USER` is set to the unprivileged account the daemon runs as, not left at the container's inherited `root`. The container engine resolves its subordinate UID and GID ranges by `$USER`, and finding none for `root` it falls back to a single-ID mapping — under which any job image carrying a file not owned by root fails to unpack.
-
-The one value the package composes rather than passes through is the label list. With emulation enabled it appends a foreign-architecture label pinned to that platform, so jobs targeting the other architecture are served under the host's emulation layer. The runner process itself always runs natively.
+The one value the package composes rather than passes through is the label list. With emulation enabled it appends a foreign-architecture label pinned to that platform, so jobs targeting the other architecture use the engine's namespace-local QEMU interpreters. The runner process itself always runs natively.
 
 ## Dependencies
 
@@ -131,19 +134,19 @@ One setup task of its own and one on its dependency:
 
 ## Health Checks
 
-One check, on the `primary` daemon.
+A hidden Docker readiness check gates `primary`, which exposes the Runner check.
 
 | Check              | Method                                                                                          | Grace Period |
 | ------------------ | ----------------------------------------------------------------------------------------------- | ------------ |
-| `primary` "Runner" | Credentials not rejected by Forgejo, then the runner process alive and the Podman API answering | 60 seconds   |
+| `primary` "Runner" | Credentials not rejected by Forgejo, then the runner process alive and the Docker API answering | 60 seconds   |
 
-Missing credentials are handled by the setup task, not readiness. The check fails while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `podman --remote info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
+Missing credentials are handled by the setup task, not readiness. The check fails while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `docker info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
 
 ## Backups and Restore
 
-The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. No dump step and nothing excluded.
+The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. The `scratch` volume is excluded; engine images and build scratch are disposable.
 
-- **Included:** the runner's credentials and configuration, and its working directory.
+- **Included:** the runner's credentials, configuration, and rejection marker.
 - **Restore:** the runner comes back configured against the same UUID and token. Whether Forgejo still recognises them depends on Forgejo's own state, which is that package's backup rather than this one's — if the forge was rebuilt, register the runner again.
 
 ## Limitations and Differences
@@ -152,7 +155,7 @@ The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. No du
 2. **Saving Configure restarts a running runner**; the runner's configuration is regenerated on each start, never reloaded live.
 3. **The service refuses to start on small hardware** — under 2 cores or roughly a 4 GB machine.
 4. **Emulated jobs are much slower than native.** The toggle exists for occasional cross-architecture work; a native runner per architecture is the better arrangement for regular builds.
-5. **Jobs run in a rootless engine inside the service**, which requires the two device grants named above, and on StartOS 0.4.0.1 and earlier a startup step to make those device nodes readable by the unprivileged user.
+5. **Jobs run privileged and can control the service's Docker engine.** Run only trusted workflows; jobs on this runner are not a security boundary from one another.
 6. **No riscv64 build.** x86_64 and aarch64 only, and the image is not run under emulation on any other architecture.
 
 ---
@@ -161,7 +164,7 @@ The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. No du
 
 ```yaml
 package_id: forgejo-runner
-image: ./Dockerfile # upstream's runner binary plus rootless Podman on Debian
+image: ./Dockerfile # upstream's runner binary plus Docker CE on Debian
 architectures:
   - x86_64
   - aarch64
@@ -169,16 +172,19 @@ subcontainers:
   - forgejo-runner-sub
 volumes:
   main: /data
+  scratch: /scratch # excluded from backups
 file_models:
   - store.json
+  - runner/rejected-uuid
 startos_managed_env_vars:
   - INSTANCE_URL
   - RUNNER_UUID
   - RUNNER_TOKEN
   - RUNNER_LABELS
   - RUNNER_CAPACITY
-  - XDG_RUNTIME_DIR
-  - USER
+  - DOCKER_HOST
+  - RUNNER_SCRATCH_DIR
+  - BINFMT_DIR
 dependencies:
   - forgejo # required; gated on its primary health check
 interfaces: {} # none; the runner accepts no inbound connections

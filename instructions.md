@@ -6,7 +6,7 @@
 
 ## What you get on StartOS
 
-A CI/CD runner that executes Forgejo Actions workflows for the **Forgejo on this device**. Each job runs in its own isolated, rootless container, and foreign-architecture container images run under emulation automatically. The runner has no interface of its own — you see it and its job logs inside Forgejo, in its Runners list and the Actions tab.
+A CI/CD runner that executes Forgejo Actions workflows for the **Forgejo on this device**. Each job runs in its own Docker container. Jobs run privileged and have access to the service's Docker engine, so workflows can control other jobs and service volumes. Only run trusted workflows. The runner has no interface of its own — you see it and its job logs inside Forgejo, in its Runners list and the Actions tab.
 
 ## Getting set up
 
@@ -33,6 +33,10 @@ A workflow's `runs-on:` is matched against the runner's labels. To also serve jo
 The first job on each label pulls its container image before anything else runs — the default
 `ubuntu-latest` image is about 1 GB, so **Set up job** can sit for a minute or two showing only a
 spinner. The image is cached afterward; later runs start in seconds.
+
+### Docker-in-Docker builds
+
+The runner provides a Docker socket from the start of each job. `docker/setup-docker-action` can also start a separate daemon inside the job: its default `/root/setup-docker-action` directory is backed by persistent scratch storage, not the job's layered root filesystem. Scratch storage and cached images are excluded from backups. Interrupted jobs can leave build data behind.
 
 ### Checking out your repository
 

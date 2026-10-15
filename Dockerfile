@@ -1,35 +1,34 @@
 # Forgejo Runner binary, pulled from the official multi-arch image (pinned).
 # Bump the tag here and the version in startos/versions/current.ts together.
 FROM code.forgejo.org/forgejo/runner:13.2.0 AS runner
+FROM tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 AS binfmt
 
 FROM debian:trixie-slim
 
-# Rootless Podman + its prerequisites (fuse-overlayfs storage, slirp4netns
-# networking). See start-docs recipe-nested-oci-runtime. Also git: the runner
-# fetches `uses:` actions with the git CLI — without it every `uses:` step fails
-# at the action fetch (exec: "git": executable file not found in $PATH).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      podman fuse-overlayfs uidmap iproute2 iptables nftables aardvark-dns \
-      passt slirp4netns ca-certificates git \
+      curl ca-certificates fuse-overlayfs iproute2 iptables jq git \
+ && install -m 0755 -d /etc/apt/keyrings \
+ && curl -fsSL https://download.docker.com/linux/debian/gpg \
+      -o /etc/apt/keyrings/docker.asc \
+ && chmod a+r /etc/apt/keyrings/docker.asc \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable" \
+      > /etc/apt/sources.list.d/docker.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=runner /bin/forgejo-runner /usr/local/bin/forgejo-runner
+COPY --from=binfmt /usr/bin/ /usr/bin/
 
-RUN mkdir -p /etc/containers \
- && printf 'unqualified-search-registries = ["docker.io"]\n' \
-        > /etc/containers/registries.conf
+RUN useradd --create-home --uid 1000 --shell /bin/bash app
 
-# Non-root user + subordinate UID/GID ranges for nested user namespaces. The
-# range must live inside the subcontainer's userns (0..65535) and must not
-# overlap the user's own UID (1000) — so start at 1001.
-RUN useradd --create-home --uid 1000 --shell /bin/bash app \
- && echo 'app:1001:64535' > /etc/subuid \
- && echo 'app:1001:64535' > /etc/subgid
-
+COPY assets/daemon.json /etc/docker/daemon.json
+COPY assets/runc-nested.sh /usr/local/bin/runc-nested
 COPY assets/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY assets/engine.sh /usr/local/bin/engine.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/runc-nested /usr/local/bin/engine.sh
 
 USER app
 WORKDIR /home/app
