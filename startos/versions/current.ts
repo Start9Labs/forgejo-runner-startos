@@ -28,18 +28,16 @@ export const current = VersionInfo.of({
   },
   migrations: {
     up: async ({ effects }) => {
-      const subcontainer = sdk.SubContainer.of(
+      await sdk.SubContainer.withTemp(
         effects,
         { imageId: 'main' },
         mount,
         'remove-podman-cache',
-      )
-      await subcontainer.execFail(
-        ['rm', '-rf', `${DATA_DIR}/runner/containers`],
-        {
-          user: 'root',
-          timeout: null,
-        },
+        (subcontainer) =>
+          subcontainer.execFail(
+            ['rm', '-rf', `${DATA_DIR}/runner/containers`],
+            { user: 'root', timeout: null },
+          ),
       )
     },
     down: IMPOSSIBLE,
