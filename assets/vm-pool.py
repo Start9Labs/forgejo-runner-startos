@@ -302,11 +302,14 @@ def exchange(operation, identity, slot):
 
 
 def client(operation, identity=None, slot=None):
-    deadline = time.monotonic() + (30 if operation in ('acquire', 'started') else 0)
+    patience = 30 if operation in ('acquire', 'started') else 0
+    deadline = None
     while True:
         try:
             return exchange(operation, identity, slot)
         except OSError:
+            if deadline is None:
+                deadline = time.monotonic() + patience
             if time.monotonic() >= deadline:
                 raise
             time.sleep(.25)
