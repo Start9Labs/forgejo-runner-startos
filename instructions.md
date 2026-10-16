@@ -33,7 +33,7 @@ runs-on: ubuntu-latest
 
 **Container mode** starts faster and uses less memory, but jobs run privileged containers with access to their engine and share the StartOS kernel. Use it only for trusted workflows.
 
-Saving **Configure** interrupts active jobs and restarts execution. **Concurrent Jobs** is a maximum, not a promise that every assigned job starts immediately. If active guests cannot release memory yet, an assigned job waits and reports provisioning in its logs. Keep concurrency low for large builds; reduce concurrency or free disk space if configuration reports insufficient resources.
+Saving **Configure** interrupts active jobs and restarts execution. **Concurrent Jobs** limits assigned Forgejo tasks, not parallel steps or nested matrix jobs inside a remote reusable workflow; those share the assigned task's VM and memory. It is a maximum, not a promise that every assigned job starts immediately. If active guests cannot release memory yet, an assigned job waits and reports provisioning in its logs. Guest memory includes space for kernel allocations; busy or kernel-pinned memory is not reassigned until reclaimed. Keep concurrency low for large builds; reduce concurrency or free disk space if configuration reports insufficient resources.
 
 ## Images and emulation
 
@@ -51,7 +51,7 @@ For the workflow's own Forgejo repository, use a checkout action that authentica
 - uses: https://github.com/actions/checkout@v4
 ```
 
-Upload any artifacts you want to keep before a virtualized job finishes. Files left only on its VM are deleted.
+Upload any artifacts you want to keep before a virtualized job finishes. Files left only on its VM are deleted. Forgejo's **Primary URL** must resolve from the workflow container, and that container must trust its certificate chain. The runner does not automatically add StartOS's private CA or resolve `.local` names inside job images.
 
 ## Replacing a forgotten registration
 

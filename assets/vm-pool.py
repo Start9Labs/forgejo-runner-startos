@@ -119,11 +119,11 @@ class MemoryPool:
         return device['size'] // MIB
 
     def request(self, endpoint, grant):
-        endpoint.execute('qom-set', {
-            'path': '/machine/peripheral/' + self.device,
-            'property': 'requested-size',
-            'value': (grant - self.boot) * MIB,
-        })
+        arguments = {'path': '/machine/peripheral/' + self.device, 'property': 'requested-size'}
+        requested = (grant - self.boot) * MIB
+        if endpoint.execute('qom-get', arguments) == requested:
+            return
+        endpoint.execute('qom-set', {**arguments, 'value': requested})
 
     def targets(self):
         ordered = sorted(self.leases.values(), key=lambda lease: lease.slot)

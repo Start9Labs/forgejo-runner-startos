@@ -30,7 +30,7 @@ runcmd:
   - [sh, -ec, 'sync; echo 3 > /proc/sys/vm/drop_caches']
   - [mkdir, -p, /var/lib/runner-scratch]
   - [rm, -f, /var/lib/docker/engine-id]
-  - [sh, -ec, 'echo online_movable > /sys/devices/system/memory/auto_online_blocks; modprobe virtio_mem']
+  - [sh, -ec, 'echo 301 > /sys/module/memory_hotplug/parameters/auto_movable_ratio; echo auto-movable > /sys/module/memory_hotplug/parameters/online_policy; echo online > /sys/devices/system/memory/auto_online_blocks; modprobe virtio_mem']
   - [touch, /var/lib/runner-scratch/.ready]
   - [systemctl, daemon-reload]
   - [systemctl, start, docker]
