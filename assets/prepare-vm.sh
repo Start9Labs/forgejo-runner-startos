@@ -3,9 +3,22 @@ set -euo pipefail
 umask 077
 source /usr/local/libexec/runner-vm.sh
 VM_MEMORY_ARGS=(-m "${VM_MEMORY_MB:?}")
-trap vm_dispose EXIT
+: "${VM_PREPARATION_STATUS:?}"
+record_preparation() {
+  printf '%s %s\n' "$$" "$1" > "$VM_PREPARATION_STATUS.tmp"
+  mv "$VM_PREPARATION_STATUS.tmp" "$VM_PREPARATION_STATUS"
+}
+finish_preparation() {
+  local status=$?
+  trap - EXIT
+  if ! vm_dispose; then status=1; fi
+  if [ "$status" -eq 0 ]; then record_preparation ready; else record_preparation failed; fi
+  exit "$status"
+}
+trap finish_preparation EXIT
 trap 'exit 143' TERM INT
 mkdir -p /cache /vm /data
+record_preparation loading
 arch=$(vm_arch)
 images=/usr/local/share/runner-guest-images.json
 template=/usr/local/share/runner-guest-cloud-init.yaml

@@ -45,6 +45,10 @@ export default {
     51: 'El controlador del presupuesto de memoria está en ejecución',
     52: 'Esperando un trabajo; sin máquina virtual asignada',
     53: 'El controlador de memoria de invitados no está en ejecución',
+    54: 'Preparación de la imagen de la máquina virtual',
+    55: 'Descargando e instalando la imagen de la máquina virtual',
+    56: 'La imagen de la máquina virtual está preparada',
+    57: 'Falló la preparación de la imagen de la máquina virtual',
   },
   de_DE: {
     0: 'Dieses Gerät erfüllt nicht die Mindestanforderungen für CI-Jobs (4 GB RAM und 2 CPU-Kerne).',
@@ -90,6 +94,10 @@ export default {
     51: 'Die Verwaltung des Gast-RAM-Budgets läuft',
     52: 'Warten auf einen Job; keine VM zugewiesen',
     53: 'Die Gast-RAM-Verwaltung läuft nicht',
+    54: 'Vorbereitung des VM-Abbilds',
+    55: 'VM-Abbild wird heruntergeladen und installiert',
+    56: 'VM-Abbild ist vorbereitet',
+    57: 'Vorbereitung des VM-Abbilds fehlgeschlagen',
   },
   pl_PL: {
     0: 'Urządzenie nie spełnia minimalnych wymagań CI (4 GB RAM i 2 rdzenie CPU).',
@@ -135,6 +143,10 @@ export default {
     51: 'Kontroler puli pamięci gości działa',
     52: 'Oczekiwanie na zadanie; brak przydzielonej maszyny',
     53: 'Kontroler pamięci gości nie działa',
+    54: 'Przygotowanie obrazu maszyny wirtualnej',
+    55: 'Pobieranie i instalowanie obrazu maszyny wirtualnej',
+    56: 'Obraz maszyny wirtualnej jest przygotowany',
+    57: 'Przygotowanie obrazu maszyny wirtualnej nie powiodło się',
   },
   fr_FR: {
     0: 'Cet appareil ne répond pas aux exigences minimales CI (4 Go de RAM et 2 cœurs CPU).',
@@ -180,5 +192,9 @@ export default {
     51: 'Le contrôleur du budget mémoire fonctionne',
     52: 'En attente d’une tâche ; aucune VM allouée',
     53: 'Le contrôleur de mémoire ne fonctionne pas',
+    54: 'Préparation de l’image de la machine virtuelle',
+    55: 'Téléchargement et installation de l’image de la machine virtuelle',
+    56: 'L’image de la machine virtuelle est prête',
+    57: 'La préparation de l’image de la machine virtuelle a échoué',
   },
 } satisfies Record<string, LangDict>

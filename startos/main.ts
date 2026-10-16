@@ -226,6 +226,10 @@ export const main = sdk.setupMain(async ({ effects }) => {
       }),
     'vm-image-preparation',
   )
+  const preparationStatusPath = '/vm/preparation.status'
+  await preparer.execFail(['rm', '-f', preparationStatusPath], {
+    user: 'root',
+  })
   const memoryEnv = {
     VM_POOL_MEMORY_MB: String(resources.memoryMiB),
     VM_BOOT_MEMORY_MB: String(resources.bootMemoryMiB),
@@ -261,6 +265,44 @@ export const main = sdk.setupMain(async ({ effects }) => {
           VM_DOCKER_PORT: '23650',
           VM_MEMORY_MB: String(preparationResources.memoryMiB),
           VM_CPU_CORES: String(preparationResources.cpuCores),
+          VM_PREPARATION_STATUS: preparationStatusPath,
+        },
+      },
+      requires: [],
+    })
+    .addHealthCheck('vm-image', {
+      ready: {
+        display: i18n('VM Image Preparation'),
+        trigger: sdk.trigger.statusTrigger(30000, {
+          loading: 1000,
+          starting: 1000,
+          failure: 5000,
+        }),
+        fn: async () => {
+          const status = await preparer.exec(
+            [
+              'sh',
+              '-ec',
+              `read -r pid phase < ${preparationStatusPath}; case "$phase" in ready|failed) ;; loading) kill -0 "$pid"; grep -qF /usr/local/bin/prepare-vm.sh /proc/$pid/cmdline;; *) exit 1;; esac; printf '%s' "$phase"`,
+            ],
+            { user: 'root', timeout: 5000 },
+          )
+          const phase = String(status.stdout).trim()
+          if (status.exitCode !== 0 || phase === 'failed') {
+            return {
+              result: 'failure',
+              message: i18n('Guest VM image preparation failed'),
+            }
+          }
+          return phase === 'ready'
+            ? {
+                result: 'success',
+                message: i18n('Guest VM image is prepared'),
+              }
+            : {
+                result: 'loading',
+                message: i18n('Downloading and installing the guest VM image'),
+              }
         },
       },
       requires: [],
@@ -328,65 +370,86 @@ export const main = sdk.setupMain(async ({ effects }) => {
       `vm-worker-${slot}`,
     )
     const rejection = rejectedUuid(controllerPath)
-    daemons = daemons.addDaemon(`worker-${slot}`, {
-      subcontainer: guest,
-      exec: {
-        command: ['bash', '/usr/local/bin/vm-worker.sh'],
-        user: 'root',
-        env: {
-          ...env,
-          ...memoryEnv,
-          VM_SLOT: String(slot),
-          RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
-          RUNNER_CAPACITY: '1',
-          RUNNER_EMULATION: String(store.emulation),
-          RUNNER_SCRATCH_DIR: '/var/lib/runner-scratch',
-          VM_DOCKER_PORT: String(port),
-          VM_DISK_GB: String(diskGiB),
-          VM_CPU_CORES: String(resources.cpuCores),
+    const jobHealth = async () => {
+      if ((await rejection.read().once())?.trim() === store.runnerUuid) {
+        return {
+          result: 'failure',
+          message: i18n(
+            'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
+          ),
+        } as const
+      }
+      const status = await guest.exec(
+        [
+          'sh',
+          '-ec',
+          `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in idle) if grep -qx forgejo-runner /proc/[0-9]*/comm; then echo idle; else echo starting; fi;; budget|booting|recycling) echo starting;; ready) kill -0 "$(cat /vm/qemu.pid)"; grep -qx forgejo-runner /proc/[0-9]*/comm; curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready;; *) exit 1;; esac`,
+        ],
+        { user: 'root', timeout: 5000 },
+      )
+      const phase = String(status.stdout).trim()
+      return {
+        result:
+          status.exitCode !== 0
+            ? 'failure'
+            : phase === 'idle'
+              ? 'waiting'
+              : phase === 'starting'
+                ? 'starting'
+                : 'success',
+        message:
+          status.exitCode === 0
+            ? phase === 'idle'
+              ? i18n('Waiting for a job; no VM allocated')
+              : phase === 'starting'
+                ? i18n('Preparing a disposable VM')
+                : i18n('Guest Docker is responding')
+            : i18n('Virtualized job slot is not running'),
+      } as const
+    }
+    daemons = daemons
+      .addDaemon(`worker-${slot}`, {
+        subcontainer: guest,
+        exec: {
+          command: ['bash', '/usr/local/bin/vm-worker.sh'],
+          user: 'root',
+          env: {
+            ...env,
+            ...memoryEnv,
+            VM_SLOT: String(slot),
+            RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
+            RUNNER_CAPACITY: '1',
+            RUNNER_EMULATION: String(store.emulation),
+            RUNNER_SCRATCH_DIR: '/var/lib/runner-scratch',
+            VM_DOCKER_PORT: String(port),
+            VM_DISK_GB: String(diskGiB),
+            VM_CPU_CORES: String(resources.cpuCores),
+          },
         },
-      },
-      ready: {
-        display: `${i18n('Virtualized Jobs')} ${slot + 1}`,
-        gracePeriod: 300000,
-        trigger: sdk.trigger.cooldownTrigger(30000),
-        fn: async () => {
-          if ((await rejection.read().once())?.trim() === store.runnerUuid) {
-            return {
-              result: 'failure',
-              message: i18n(
-                'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
-              ),
-            }
-          }
-          const status = await guest.exec(
-            [
-              'sh',
-              '-ec',
-              `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in idle) if grep -qx forgejo-runner /proc/[0-9]*/comm; then echo idle; else echo starting; fi;; budget|booting|recycling) echo starting;; ready) kill -0 "$(cat /vm/qemu.pid)"; grep -qx forgejo-runner /proc/[0-9]*/comm; curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready;; *) exit 1;; esac`,
-            ],
-            { user: 'root', timeout: 5000 },
-          )
-          return {
-            result:
-              status.exitCode !== 0
-                ? 'failure'
-                : String(status.stdout).trim() === 'starting'
-                  ? 'starting'
-                  : 'success',
-            message:
-              status.exitCode === 0
-                ? String(status.stdout).trim() === 'idle'
-                  ? i18n('Waiting for a job; no VM allocated')
-                  : String(status.stdout).trim() === 'starting'
-                    ? i18n('Preparing a disposable VM')
-                    : i18n('Guest Docker is responding')
-                : i18n('Virtualized job slot is not running'),
-          }
+        ready: {
+          display: null,
+          gracePeriod: 300000,
+          fn: async () => {
+            const health = await jobHealth()
+            return health.result === 'waiting'
+              ? { ...health, result: 'success' }
+              : health
+          },
         },
-      },
-      requires: ['prepare-vm'],
-    }) as typeof daemons
+        requires: ['prepare-vm'],
+      })
+      .addHealthCheck(`jobs-${slot}`, {
+        ready: {
+          display: `${i18n('Virtualized Jobs')} ${slot + 1}`,
+          gracePeriod: 300000,
+          trigger: sdk.trigger.statusTrigger(30000, {
+            waiting: 1000,
+            starting: 1000,
+          }),
+          fn: jobHealth,
+        },
+        requires: ['vm-image'],
+      }) as typeof daemons
   }
   return daemons
 })

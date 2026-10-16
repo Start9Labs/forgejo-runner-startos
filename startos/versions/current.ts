@@ -15,6 +15,7 @@ export const current = VersionInfo.of({
 - Workflow labels are routing, not access control; use an appropriately scoped persistent registration.
 - Routine empty job polls are debug-only; job pickup and polling errors remain visible.
 - Isolated action-source caches per job to prevent abandoned Git locks from blocking later jobs.
+- VM image download and installation report Loading; idle job slots report Waiting separately from controller readiness.
 - Corrected the upstream license to GPL-3.0-or-later.
 - Updated start-sdk to 3.0.6.`,
     es_ES: `- Si faltan credenciales, se crea una tarea crítica Configurar; complétela antes de iniciar el ejecutor.
@@ -27,6 +28,7 @@ export const current = VersionInfo.of({
 - Las etiquetas no controlan el acceso; use un registro persistente con alcance adecuado.
 - Los sondeos sin trabajos solo aparecen en depuración; las asignaciones y los errores siguen visibles.
 - Cachés de código de acciones separadas por trabajo para evitar bloqueos de Git abandonados.
+- La preparación de la imagen indica Cargando; los trabajos inactivos indican En espera sin bloquear el ejecutor.
 - Licencia corregida a GPL-3.0-or-later.
 - start-sdk actualizado a 3.0.6.`,
     de_DE: `- Fehlende Zugangsdaten lösen eine kritische Aufgabe „Konfigurieren“ aus; schließen Sie sie vor dem Start ab.
@@ -39,6 +41,7 @@ export const current = VersionInfo.of({
 - Labels sind keine Zugriffskontrolle; eine passend eingeschränkte persistente Registrierung verwenden.
 - Leere Job-Abfragen erscheinen nur im Debug-Log; Jobzuweisungen und Abfragefehler bleiben sichtbar.
 - Getrennte Aktionsquellen-Caches pro Job verhindern Blockaden durch zurückgelassene Git-Sperren.
+- Die VM-Abbildvorbereitung zeigt Laden; inaktive Job-Slots zeigen Warten unabhängig von der Controller-Bereitschaft.
 - Upstream-Lizenz auf GPL-3.0-or-later korrigiert.
 - start-sdk auf 3.0.6 aktualisiert.`,
     pl_PL: `- Brak danych uwierzytelniających tworzy krytyczne zadanie Konfiguruj; ukończ je przed uruchomieniem runnera.
@@ -51,6 +54,7 @@ export const current = VersionInfo.of({
 - Etykiety nie kontrolują dostępu; używaj trwałej rejestracji o odpowiednim zakresie.
 - Puste odpytywania zadań są widoczne tylko w logach debugowania; przydziały i błędy pozostają widoczne.
 - Osobne pamięci podręczne źródeł akcji dla każdego zadania zapobiegają blokowaniu przez porzucone blokady Git.
+- Przygotowanie obrazu maszyny pokazuje Ładowanie, a bezczynne zadania Oczekiwanie, niezależnie od gotowości kontrolera.
 - Poprawiono licencję na GPL-3.0-or-later.
 - Zaktualizowano start-sdk do 3.0.6.`,
     fr_FR: `- Sans identifiants, une tâche critique Configurer est créée ; terminez-la avant de démarrer le runner.
@@ -63,6 +67,7 @@ export const current = VersionInfo.of({
 - Les étiquettes ne contrôlent pas l’accès ; utilisez une inscription persistante de portée adaptée.
 - Les interrogations sans tâche restent au niveau debug ; les attributions et erreurs restent visibles.
 - Les caches de sources des actions sont séparés par tâche pour éviter les blocages dus aux verrous Git abandonnés.
+- La préparation de l’image indique Chargement ; les tâches inactives indiquent En attente sans bloquer le contrôleur.
 - Licence corrigée en GPL-3.0-or-later.
 - start-sdk mis à jour vers 3.0.6.`,
   },

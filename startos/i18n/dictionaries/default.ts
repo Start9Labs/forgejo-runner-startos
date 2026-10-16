@@ -44,6 +44,10 @@ const dict = {
   'Shared guest-memory controller is running': 51,
   'Waiting for a job; no VM allocated': 52,
   'Guest-memory controller is not running': 53,
+  'VM Image Preparation': 54,
+  'Downloading and installing the guest VM image': 55,
+  'Guest VM image is prepared': 56,
+  'Guest VM image preparation failed': 57,
 }
 
 export type I18nKey = keyof typeof dict

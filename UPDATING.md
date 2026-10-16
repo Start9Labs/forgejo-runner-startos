@@ -20,7 +20,7 @@ The prepared cache fingerprint includes the image metadata, host architecture, c
 
 The guest kernel must support virtio-mem and movable memory hotplug. Verify actual QMP device-size acknowledgement for both growth and shrink, not just a successful requested-size command. Initial expansion stays zero until cloud-init enables movable onlining and Docker is ready. Never grant reclaimed memory to a second guest before shrink acknowledgement. Verify broker recovery after a memory-admission wait longer than its reconnect window; repeated outages must each receive a fresh recovery window.
 
-Verify a first preparation, a cache-hit restart, zero idle guests, distinct consecutive guest boots, a lone job borrowing the pool, concurrent redistribution, and a job that uses a foreign-architecture image. An ARM64 firmware boot under TCG validates image/firmware wiring, not native ARM64 KVM execution; report that distinction when native hardware is unavailable. The production launcher always requests KVM and never falls back to TCG.
+Verify a first preparation with its image check loading, preparation failure/death reporting failure, a cache-hit restart, idle job checks waiting with controller readiness intact, zero idle guests, distinct consecutive guest boots, a lone job borrowing the pool, concurrent redistribution, and a job that uses a foreign-architecture image. An ARM64 firmware boot under TCG validates image/firmware wiring, not native ARM64 KVM execution; report that distinction when native hardware is unavailable. The production launcher always requests KVM and never falls back to TCG.
 
 ## User-mode QEMU
 
