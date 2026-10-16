@@ -3,29 +3,23 @@ import {
   mainHostId as forgejoHostId,
   uiPort,
 } from 'forgejo-startos/startos/utils'
-import { i18n } from './i18n'
 import { sdk } from './sdk'
+import { i18n } from './i18n'
 import { storeJson } from './fileModels/store.json'
 import { rejectedUuid } from './fileModels/rejectedUuid'
 import {
-  DATA_DIR,
   DOCKER_HOST,
   JOB_SCRATCH_DIR,
   MIN_CPU_CORES,
   MIN_MEMORY_BYTES,
   RUNTIME_DIR,
-  SCRATCH_DIR,
-  RunnerSettings,
-  RunnerTier,
   runnerLabels,
-  runnerMounts,
-  runnerTiers,
-  validateRunners,
+  virtualizationAvailable,
+  vmResources,
+  vmDiskSize,
 } from './utils'
 
 export const main = sdk.setupMain(async ({ effects }) => {
-  // A CI runner runs full builds (compilers, image pulls, nested containers)
-  // per job. Refuse to run on hardware that can't handle it.
   if (totalmem() < MIN_MEMORY_BYTES || cpus().length < MIN_CPU_CORES) {
     throw new Error(
       i18n(
@@ -33,17 +27,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ),
     )
   }
-
   const store = await storeJson.read().const(effects)
   if (!store) throw new Error(i18n('Store not found'))
-  validateRunners(store)
-
-  // The runner connects to its Forgejo dependency over the internal LXC bridge.
-  // `sdk.host.getBridgeAddress` resolves the address Forgejo's `http` binding
-  // itself publishes on the bridge, so it holds steady across Forgejo
-  // updates/restarts; `.const()` re-runs main only
-  // when the address itself changes (Forgejo install/uninstall/port-change),
-  // never on churn. A null (Forgejo absent) surfaces the friendly guard below.
   const forgeBridge = await sdk.host
     .getBridgeAddress(effects, {
       packageId: 'forgejo',
@@ -58,46 +43,70 @@ export const main = sdk.setupMain(async ({ effects }) => {
         'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
       ),
     )
-  const forgeUrl = `http://${forgeBridge}`
-
-  function defineRunner(tier: RunnerTier, settings: RunnerSettings) {
-    const profile = runnerTiers[tier]
-    const subcontainer = sdk.SubContainer.of(
+  const available = await virtualizationAvailable(effects)
+  const env = {
+    INSTANCE_URL: `http://${forgeBridge}`,
+    RUNNER_UUID: store.runnerUuid,
+    RUNNER_TOKEN: store.runnerToken,
+    RUNNER_LABELS: runnerLabels(store).join(','),
+    RUNNER_PRIVILEGED: 'true',
+    RUNNER_CONFIGURE_ACTION: i18n('Configure'),
+  }
+  if (!store.virtualization || !available) {
+    const controllerPath = './controller/container'
+    const engine = sdk.SubContainer.of(
       effects,
       { imageId: 'main' },
-      runnerMounts(tier),
-      profile.subcontainerName,
+      sdk.Mounts.of().mountVolume({
+        volumeId: 'scratch',
+        subpath: './container',
+        mountpoint: '/scratch',
+        readonly: false,
+      }),
+      'container-engine',
     )
-    const rejection = rejectedUuid(tier)
-    const configureAction = profile.privileged
-      ? i18n('Configure Privileged Runner')
-      : i18n('Configure')
-    return {
-      ownData: {
-        subcontainer,
+    const controller = sdk.SubContainer.of(
+      effects,
+      { imageId: 'main' },
+      sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'main',
+          subpath: controllerPath,
+          mountpoint: '/data',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './container',
+          mountpoint: '/scratch',
+          readonly: false,
+        }),
+      'runner-controller',
+    )
+    const rejection = rejectedUuid(controllerPath)
+    return sdk.Daemons.of(effects)
+      .addOneshot('prepare-controller', {
+        subcontainer: controller,
+        exec: {
+          command: ['mkdir', '-p', '/data/runner/run', JOB_SCRATCH_DIR],
+          user: 'root',
+        },
+        requires: [],
+      })
+      .addOneshot('prepare-engine', {
+        subcontainer: engine,
         exec: {
           command: [
             'sh',
-            '-c',
-            `mkdir -p ${DATA_DIR}/runner${profile.privileged ? ` ${JOB_SCRATCH_DIR}` : ''} && chown app:app ${DATA_DIR}/runner`,
-          ] satisfies [string, ...string[]],
+            '-ec',
+            `rm -rf ${RUNTIME_DIR}; mkdir -p ${RUNTIME_DIR}`,
+          ],
           user: 'root',
         },
-      },
-      cleanRuntime: {
-        // Runtime sockets and PID files cannot survive a container restart.
-        subcontainer,
-        exec: {
-          command: [
-            'sh',
-            '-c',
-            `rm -rf ${RUNTIME_DIR} && install -d -o app -g app -m 0700 ${RUNTIME_DIR}`,
-          ] satisfies [string, ...string[]],
-          user: 'root',
-        },
-      },
-      engine: {
-        subcontainer,
+        requires: [],
+      })
+      .addDaemon('engine', {
+        subcontainer: engine,
         exec: {
           command: [
             '/usr/local/bin/engine.sh',
@@ -106,21 +115,21 @@ export const main = sdk.setupMain(async ({ effects }) => {
             '--group',
             'app',
             '--data-root',
-            `${SCRATCH_DIR}/docker`,
+            '/scratch/docker',
             '--exec-root',
             `${RUNTIME_DIR}/docker`,
             '--pidfile',
             `${RUNTIME_DIR}/docker.pid`,
             '--bridge',
-            profile.bridge,
+            'runner',
             '--default-address-pool',
-            `base=${profile.addressPool},size=24`,
-          ] satisfies [string, ...string[]],
+            'base=172.20.0.0/16,size=24',
+          ],
           user: 'root',
           env: {
             BINFMT_DIR: `${RUNTIME_DIR}/binfmt`,
-            RUNNER_BRIDGE: profile.bridge,
-            RUNNER_BRIDGE_ADDRESS: profile.bridgeAddress,
+            RUNNER_BRIDGE: 'runner',
+            RUNNER_BRIDGE_ADDRESS: '172.18.0.1/24',
           },
         },
         ready: {
@@ -128,55 +137,41 @@ export const main = sdk.setupMain(async ({ effects }) => {
           fn: () =>
             sdk.healthCheck.runHealthScript(
               ['docker', '--host', DOCKER_HOST, 'info'],
-              subcontainer,
+              engine,
               { timeout: 10000 },
             ),
         },
-      },
-      runner: {
-        subcontainer,
+        requires: ['prepare-engine'],
+      })
+      .addDaemon('runner', {
+        subcontainer: controller,
         exec: {
-          command: ['/usr/local/bin/entrypoint.sh'] satisfies [
-            string,
-            ...string[],
-          ],
-          user: 'app',
+          command: ['/usr/local/bin/entrypoint.sh'],
+          user: 'root',
           env: {
-            INSTANCE_URL: forgeUrl,
-            RUNNER_UUID: settings.runnerUuid,
-            RUNNER_TOKEN: settings.runnerToken,
-            RUNNER_LABELS: runnerLabels(settings, tier).join(','),
-            RUNNER_CAPACITY: String(settings.capacity),
-            RUNNER_PRIVILEGED: String(profile.privileged),
-            RUNNER_CONFIGURE_ACTION: configureAction,
+            ...env,
             DOCKER_HOST,
+            RUNNER_CAPACITY: String(store.capacity),
             RUNNER_SCRATCH_DIR: JOB_SCRATCH_DIR,
           },
         },
         ready: {
-          display: i18n(profile.display),
-          gracePeriod: 60000,
-          trigger: sdk.trigger.cooldownTrigger(30000),
+          display: i18n('Runner'),
           fn: async () =>
-            (await rejection.read().once())?.trim() === settings.runnerUuid
+            (await rejection.read().once())?.trim() === store.runnerUuid
               ? {
                   result: 'failure' as const,
-                  message: profile.privileged
-                    ? i18n(
-                        'Forgejo no longer recognizes the privileged runner. Create a new scoped registration and enter it in Configure Privileged Runner.',
-                      )
-                    : i18n(
-                        'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
-                      ),
+                  message: i18n(
+                    'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
+                  ),
                 }
               : sdk.healthCheck.runHealthScript(
                   [
-                    'bash',
-                    '-c',
-                    // `comm` is 15 characters wide, which `forgejo-runner` fits.
-                    `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && docker --host ${DOCKER_HOST} info >/dev/null`,
+                    'sh',
+                    '-ec',
+                    `grep -qx forgejo-runner /proc/[0-9]*/comm && docker --host ${DOCKER_HOST} info >/dev/null`,
                   ],
-                  subcontainer,
+                  controller,
                   {
                     timeout: 10000,
                     message: () => i18n('Runner is running'),
@@ -184,46 +179,149 @@ export const main = sdk.setupMain(async ({ effects }) => {
                   },
                 ),
         },
-      },
-    }
+        requires: ['prepare-controller', 'engine'],
+      })
+      .addHealthCheck('execution-mode', {
+        ready: {
+          display: i18n('Container Mode'),
+          fn: async () => ({
+            result: 'success',
+            message: available
+              ? i18n(
+                  'Virtualization is disabled. Jobs use privileged containers within the service and share the StartOS kernel. Only run trusted workflows.',
+                )
+              : i18n(
+                  'KVM is unavailable. Jobs use containers and share the StartOS kernel.',
+                ),
+          }),
+        },
+        requires: [],
+      })
   }
 
-  const regular = defineRunner('unprivileged', store)
-  const build = store.buildRunner.enabled
-    ? defineRunner('build', store.buildRunner)
-    : null
-  const engines = build
-    ? (['engine', 'build-engine'] as const)
-    : (['engine'] as const)
-
-  return sdk.Daemons.of(effects)
-    .addOneshot('own-data', { ...regular.ownData, requires: [] })
-    .addOneshot('clean-runtime', {
-      ...regular.cleanRuntime,
-      requires: ['own-data'],
-    })
-    .addDaemon('engine', { ...regular.engine, requires: ['clean-runtime'] })
-    .addOneshot('build-own-data', () =>
-      build ? { ...build.ownData, requires: [] } : null,
+  const resources = vmResources(store.capacity)
+  const diskGiB = await vmDiskSize(effects, store.capacity)
+  const preparationResources = vmResources(1)
+  const preparer = sdk.SubContainer.of(
+    effects,
+    { imageId: 'main' },
+    sdk.Mounts.of()
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-images',
+        mountpoint: '/cache',
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-preparation/runtime',
+        mountpoint: '/vm',
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-preparation/control',
+        mountpoint: '/data',
+        readonly: false,
+      }),
+    'vm-image-preparation',
+  )
+  let daemons = sdk.Daemons.of(effects).addOneshot('prepare-vm', {
+    subcontainer: preparer,
+    exec: {
+      command: ['bash', '/usr/local/bin/prepare-vm.sh'],
+      user: 'root',
+      env: {
+        VM_DOCKER_PORT: '23650',
+        VM_MEMORY_MB: String(preparationResources.memoryMiB),
+        VM_CPU_CORES: String(preparationResources.cpuCores),
+      },
+    },
+    requires: [],
+  })
+  for (let slot = 0; slot < store.capacity; slot++) {
+    const port = 23750 + slot
+    const controllerPath = `./controller/workers/${slot}`
+    const guest = sdk.SubContainer.of(
+      effects,
+      { imageId: 'main' },
+      sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-images',
+          mountpoint: '/base',
+          readonly: true,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: `./vm-workers/${slot}`,
+          mountpoint: '/vm',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'main',
+          subpath: controllerPath,
+          mountpoint: '/data',
+          readonly: false,
+        }),
+      `vm-worker-${slot}`,
     )
-    .addOneshot('build-clean-runtime', () =>
-      build
-        ? {
-            ...build.cleanRuntime,
-            requires: ['build-own-data'],
+    const rejection = rejectedUuid(controllerPath)
+    daemons = daemons.addDaemon(`worker-${slot}`, {
+      subcontainer: guest,
+      exec: {
+        command: ['bash', '/usr/local/bin/vm-worker.sh'],
+        user: 'root',
+        env: {
+          ...env,
+          RUNNER_CAPACITY: '1',
+          RUNNER_EMULATION: String(store.emulation),
+          RUNNER_SCRATCH_DIR: '/var/lib/runner-scratch',
+          VM_DOCKER_PORT: String(port),
+          VM_DISK_GB: String(diskGiB),
+          VM_MEMORY_MB: String(resources.memoryMiB),
+          VM_CPU_CORES: String(resources.cpuCores),
+        },
+      },
+      ready: {
+        display: `${i18n('Virtualized Jobs')} ${slot + 1}`,
+        gracePeriod: 300000,
+        trigger: sdk.trigger.cooldownTrigger(30000),
+        fn: async () => {
+          if ((await rejection.read().once())?.trim() === store.runnerUuid) {
+            return {
+              result: 'failure',
+              message: i18n(
+                'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
+              ),
+            }
           }
-        : null,
-    )
-    .addDaemon('build-engine', () =>
-      build
-        ? {
-            ...build.engine,
-            requires: ['build-clean-runtime'],
+          const status = await guest.exec(
+            [
+              'sh',
+              '-ec',
+              `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in booting|recycling) echo starting;; *) kill -0 "$(cat /vm/qemu.pid)"; if grep -qx forgejo-runner /proc/[0-9]*/comm; then curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready; else echo starting; fi;; esac`,
+            ],
+            { user: 'root', timeout: 5000 },
+          )
+          return {
+            result:
+              status.exitCode !== 0
+                ? 'failure'
+                : String(status.stdout).trim() === 'ready'
+                  ? 'success'
+                  : 'starting',
+            message:
+              status.exitCode === 0
+                ? String(status.stdout).trim() === 'starting'
+                  ? i18n('Preparing a disposable VM')
+                  : i18n('Guest Docker is responding')
+                : i18n('Virtualized job slot is not running'),
           }
-        : null,
-    )
-    .addDaemon('primary', { ...regular.runner, requires: [...engines] })
-    .addDaemon('build-runner', () =>
-      build ? { ...build.runner, requires: [...engines] } : null,
-    )
+        },
+      },
+      requires: ['prepare-vm'],
+    }) as typeof daemons
+  }
+  return daemons
 })

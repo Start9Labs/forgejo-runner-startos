@@ -36,4 +36,4 @@ verified, tried, and decided belongs in the commit message and the PR body.
 
 - **Don't drop `git` from the image.** The runner fetches `uses:` actions with the git CLI, and without it every such step fails with an exec error that never names the cause.
 - **Don't recursively chown the data mount.** `store.json` must retain its ownership, and engine layers contain meaningful UID/GID ownership.
-- **Both runner health checks must observe their own process.** `ready.fn` overwrites the SDK's crash status, so a configuration-only check paints a crash loop green.
+- **Every execution health check must observe its own process.** `ready.fn` overwrites the SDK's crash status, so a configuration-only check paints a crash loop green.

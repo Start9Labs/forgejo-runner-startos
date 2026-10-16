@@ -1,4 +1,5 @@
 .git
+**/.git
 .gitmodules
 node_modules
 javascript

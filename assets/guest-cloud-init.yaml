@@ -1,0 +1,35 @@
+#cloud-config
+hostname: forgejo-job
+manage_etc_hosts: true
+disable_root: true
+ssh_pwauth: false
+users: []
+write_files:
+  - path: /etc/docker/tls/ca.pem
+    permissions: '0600'
+    encoding: b64
+    content: '@TLS_CA@'
+  - path: /etc/docker/tls/cert.pem
+    permissions: '0600'
+    encoding: b64
+    content: '@TLS_SERVER_CERT@'
+  - path: /etc/docker/tls/key.pem
+    permissions: '0600'
+    encoding: b64
+    content: '@TLS_SERVER_KEY@'
+  - path: /etc/systemd/system/docker.service.d/runner.conf
+    content: |
+      [Unit]
+      ConditionPathExists=/var/lib/runner-scratch/.ready
+      [Service]
+      ExecStart=
+      ExecStart=/usr/sbin/dockerd -H fd:// -H tcp://0.0.0.0:2376 --tlsverify --tlscacert=/etc/docker/tls/ca.pem --tlscert=/etc/docker/tls/cert.pem --tlskey=/etc/docker/tls/key.pem --containerd=/run/containerd/containerd.sock
+runcmd:
+  - [sh, -ec, 'if test -s /run/systemd/resolve/resolv.conf; then ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf; fi']
+  - [apt-get, clean]
+  - [sh, -ec, 'sync; echo 3 > /proc/sys/vm/drop_caches']
+  - [mkdir, -p, /var/lib/runner-scratch]
+  - [rm, -f, /var/lib/docker/engine-id]
+  - [touch, /var/lib/runner-scratch/.ready]
+  - [systemctl, daemon-reload]
+  - [systemctl, start, docker]

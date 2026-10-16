@@ -1,13 +1,28 @@
-# Forgejo Runner binary, pulled from the official multi-arch image (pinned).
-# Bump the tag here and the version in startos/versions/current.ts together.
-FROM code.forgejo.org/forgejo/runner:13.2.0 AS runner
-FROM tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0 AS binfmt
+ARG BINFMT_IMAGE=tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+FROM --platform=$BUILDPLATFORM golang:1.26.8-trixie AS runner
+WORKDIR /src
+COPY upstream/ ./
+COPY patches/ /patches/
+RUN for file in /patches/*.patch; do git apply "$file"; done
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go test -short -run '^Test(Action|RemoteAction|StepActionLocal|StepActionRemote)' ./act/runner \
+ && CGO_ENABLED=0 go test -short ./act/container/docker
+ARG TARGETOS
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -tags netgo,osusergo \
+      -ldflags '-s -w -X code.forgejo.org/forgejo/runner/v13/internal/pkg/ver.version=v13.2.0' \
+      -o /bin/forgejo-runner .
+FROM $BINFMT_IMAGE AS binfmt
 
 FROM debian:trixie-slim
+ARG BINFMT_IMAGE
+RUN mkdir -p /usr/local/share && printf '%s\n' "$BINFMT_IMAGE" > /usr/local/share/binfmt-image
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       curl ca-certificates fuse-overlayfs iproute2 iptables jq git \
+      qemu-system-x86 qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://download.docker.com/linux/debian/gpg \
       -o /etc/apt/keyrings/docker.asc \
@@ -28,7 +43,13 @@ COPY assets/daemon.json /etc/docker/daemon.json
 COPY assets/runc-nested.sh /usr/local/bin/runc-nested
 COPY assets/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY assets/engine.sh /usr/local/bin/engine.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/runc-nested /usr/local/bin/engine.sh
+COPY assets/vm.sh /usr/local/libexec/runner-vm.sh
+COPY assets/docker-client.sh /usr/local/libexec/runner-docker-client.sh
+COPY assets/prepare-vm.sh /usr/local/bin/prepare-vm.sh
+COPY assets/vm-worker.sh /usr/local/bin/vm-worker.sh
+COPY assets/guest-images.json /usr/local/share/runner-guest-images.json
+COPY assets/guest-cloud-init.yaml /usr/local/share/runner-guest-cloud-init.yaml
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/runc-nested /usr/local/bin/engine.sh /usr/local/bin/prepare-vm.sh /usr/local/bin/vm-worker.sh
 
 USER app
 WORKDIR /home/app

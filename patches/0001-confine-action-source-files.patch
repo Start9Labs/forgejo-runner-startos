@@ -1,0 +1,404 @@
+Subject: Confine action source files to their source repository
+
+Retire when the pinned upstream release provides equivalent source-root
+containment for action metadata, build contexts, ignore files and fallback writes.
+
+diff --git a/act/container/docker/build.go b/act/container/docker/build.go
+index d0632a5d..14696f9a 100644
+--- a/act/container/docker/build.go
++++ b/act/container/docker/build.go
+@@ -85,14 +85,19 @@ func createBuildContext(ctx context.Context, contextDir, relDockerfile string) (
+ 	// And canonicalize dockerfile name to a platform-independent one
+ 	relDockerfile = filepath.ToSlash(relDockerfile)
+ 
+-	f, err := os.Open(filepath.Join(contextDir, ".dockerignore"))
++	source, err := os.OpenRoot(contextDir)
++	if err != nil {
++		return nil, err
++	}
++	defer source.Close()
++	f, err := source.Open(".dockerignore")
+ 	if err != nil && !os.IsNotExist(err) {
+ 		return nil, err
+ 	}
+-	defer f.Close()
+ 
+ 	var excludes []string
+ 	if err == nil {
++		defer f.Close()
+ 		excludes, err = ignorefile.ReadAll(f)
+ 		if err != nil {
+ 			return nil, err
+diff --git a/act/container/docker/build_context_test.go b/act/container/docker/build_context_test.go
+new file mode 100644
+index 00000000..ba0c1230
+--- /dev/null
++++ b/act/container/docker/build_context_test.go
+@@ -0,0 +1,51 @@
++//go:build !WITHOUT_DOCKER && (linux || darwin || windows || freebsd || openbsd)
++
++package docker
++
++import (
++	"archive/tar"
++	"io"
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestBuildContextIgnoreFileBoundary(t *testing.T) {
++	for _, linked := range []bool{false, true} {
++		t.Run(map[bool]string{false: "regular", true: "outside symlink"}[linked], func(t *testing.T) {
++			base := t.TempDir()
++			contextDir := filepath.Join(base, "context")
++			require.NoError(t, os.Mkdir(contextDir, 0o700))
++			require.NoError(t, os.WriteFile(filepath.Join(contextDir, "Dockerfile"), []byte("FROM scratch\n"), 0o600))
++			if linked {
++				outside := filepath.Join(base, "ignore")
++				require.NoError(t, os.WriteFile(outside, []byte("unused\n"), 0o600))
++				require.NoError(t, os.Symlink(outside, filepath.Join(contextDir, ".dockerignore")))
++			} else {
++				require.NoError(t, os.WriteFile(filepath.Join(contextDir, ".dockerignore"), []byte("unused\n"), 0o600))
++			}
++			stream, err := createBuildContext(t.Context(), contextDir, "Dockerfile")
++			if linked {
++				require.Error(t, err)
++				return
++			}
++			require.NoError(t, err)
++			defer stream.Close()
++			reader := tar.NewReader(stream)
++			found := false
++			for {
++				header, err := reader.Next()
++				if err == io.EOF {
++					break
++				}
++				require.NoError(t, err)
++				if header.Name == "Dockerfile" {
++					found = true
++				}
++			}
++			require.True(t, found)
++		})
++	}
++}
+diff --git a/act/runner/action.go b/act/runner/action.go
+index 0dbae4d7..0fa4e64b 100644
+--- a/act/runner/action.go
++++ b/act/runner/action.go
+@@ -278,6 +278,43 @@ func removeGitIgnore(ctx context.Context, directory string) error {
+ 	return nil
+ }
+ 
++func remoteActionBuildContext(sourceDir, actionPath, image string) (string, string, error) {
++	name := filepath.Join(actionPath, image)
++	if filepath.IsAbs(actionPath) || filepath.IsAbs(image) || !filepath.IsLocal(name) {
++		return "", "", fmt.Errorf("Docker action image must stay within its source repository")
++	}
++	source, err := os.OpenRoot(sourceDir)
++	if err != nil {
++		return "", "", err
++	}
++	defer source.Close()
++	file, err := source.Open(name)
++	if err != nil {
++		return "", "", fmt.Errorf("invalid Docker action source: %w", err)
++	}
++	info, err := file.Stat()
++	file.Close()
++	if err != nil {
++		return "", "", err
++	}
++	if !info.Mode().IsRegular() {
++		return "", "", fmt.Errorf("Docker action image must name a regular file")
++	}
++	sourceDir, err = filepath.EvalSymlinks(sourceDir)
++	if err != nil {
++		return "", "", err
++	}
++	contextDir, err := filepath.EvalSymlinks(filepath.Join(sourceDir, filepath.Dir(name)))
++	if err != nil {
++		return "", "", err
++	}
++	rel, err := filepath.Rel(sourceDir, contextDir)
++	if err != nil || !filepath.IsLocal(rel) {
++		return "", "", fmt.Errorf("Docker action context must stay within its source repository")
++	}
++	return contextDir, filepath.Base(name), nil
++}
++
+ func execAsDocker(ctx context.Context, step actionStep, actionName, basedir, subpath string, localAction bool, entrypointType string) error {
+ 	logger := common.Logger(ctx)
+ 	rc := step.getRunContext()
+@@ -318,6 +355,12 @@ func execAsDocker(ctx context.Context, step actionStep, actionName, basedir, sub
+ 			image = fmt.Sprintf("runner-remote-docker-action-%s:latest", common.Sha256(step.getStepModel().Uses))
+ 		}
+ 		contextDir, fileName := filepath.Split(filepath.Join(location, action.Runs.Image))
++		if !localAction {
++			contextDir, fileName, err = remoteActionBuildContext(basedir, subpath, action.Runs.Image)
++			if err != nil {
++				return err
++			}
++		}
+ 
+ 		imageExists, err := docker.ImageExistsLocally(ctx, ep, image, targetPlatform)
+ 		if err != nil {
+diff --git a/act/runner/action_source_test.go b/act/runner/action_source_test.go
+new file mode 100644
+index 00000000..05ba04e3
+--- /dev/null
++++ b/act/runner/action_source_test.go
+@@ -0,0 +1,100 @@
++package runner
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"code.forgejo.org/forgejo/runner/v13/act/model"
++	"github.com/stretchr/testify/require"
++)
++
++func TestRemoteActionSourceBoundary(t *testing.T) {
++	for _, test := range []struct {
++		name                string
++		readLink, writeLink bool
++	}{
++		{name: "normal metadata"},
++		{name: "metadata outside source", readLink: true},
++		{name: "fallback outside source", writeLink: true},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			base := t.TempDir()
++			repo := filepath.Join(base, "repo")
++			dir := filepath.Join(repo, "action")
++			require.NoError(t, os.MkdirAll(dir, 0o700))
++			outside := filepath.Join(base, "fixture")
++			metadata := []byte("name: fixture\nruns:\n  using: node20\n  main: index.js\n")
++			require.NoError(t, os.WriteFile(outside, metadata, 0o600))
++			if test.readLink {
++				require.NoError(t, os.Symlink(outside, filepath.Join(dir, "action.yml")))
++			} else if test.writeLink {
++				require.NoError(t, os.Symlink(outside, filepath.Join(dir, "trampoline.js")))
++			} else {
++				require.NoError(t, os.WriteFile(filepath.Join(dir, "action.yml"), metadata, 0o600))
++			}
++			sar := &stepActionRemote{
++				Step: &model.Step{Uses: "org/repo/action@v1", With: map[string]string{"args": "echo fixture"}},
++				RunContext: &RunContext{
++					Config: &Config{},
++					Run:    &model.Run{JobID: "1", Workflow: &model.Workflow{Jobs: map[string]*model.Job{"1": {}}}},
++				},
++				workTree:   &dirWorktree{dir: repo},
++				readAction: readActionImpl,
++			}
++			err := sar.prepareActionExecutor()(t.Context())
++			if test.readLink || test.writeLink {
++				require.Error(t, err)
++			} else {
++				require.NoError(t, err)
++			}
++			content, err := os.ReadFile(outside)
++			require.NoError(t, err)
++			require.Equal(t, metadata, content)
++		})
++	}
++}
++
++func TestRemoteActionBuildContext(t *testing.T) {
++	base := t.TempDir()
++	repo := filepath.Join(base, "repo")
++	outside := filepath.Join(base, "repo-sibling")
++	for _, dir := range []string{repo, outside, filepath.Join(repo, "actions", "example")} {
++		require.NoError(t, os.MkdirAll(dir, 0o700))
++		require.NoError(t, os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte("FROM scratch\n"), 0o600))
++	}
++	require.NoError(t, os.WriteFile(filepath.Join(repo, "actions", "Dockerfile"), []byte("FROM scratch\n"), 0o600))
++	require.NoError(t, os.Symlink(outside, filepath.Join(repo, "outside-dir")))
++	require.NoError(t, os.Symlink(filepath.Join(outside, "Dockerfile"), filepath.Join(repo, "outside-file")))
++	require.NoError(t, os.Symlink("actions", filepath.Join(repo, "inside-dir")))
++
++	for _, test := range []struct {
++		name, actionPath, image, context string
++		invalid                          bool
++	}{
++		{name: "root", image: "Dockerfile", context: repo},
++		{name: "nested", actionPath: "actions/example", image: "Dockerfile", context: filepath.Join(repo, "actions", "example")},
++		{name: "repository parent", actionPath: "actions/example", image: "../Dockerfile", context: filepath.Join(repo, "actions")},
++		{name: "inside directory symlink", image: "inside-dir/Dockerfile", context: filepath.Join(repo, "actions")},
++		{name: "parent escape", image: "../repo-sibling/Dockerfile", invalid: true},
++		{name: "action path escape", actionPath: "../repo-sibling", image: "Dockerfile", invalid: true},
++		{name: "absolute image", image: filepath.Join(outside, "Dockerfile"), invalid: true},
++		{name: "absolute action", actionPath: outside, image: "Dockerfile", invalid: true},
++		{name: "directory symlink escape", image: "outside-dir/Dockerfile", invalid: true},
++		{name: "file symlink escape", image: "outside-file", invalid: true},
++		{name: "directory instead of file", image: "actions", invalid: true},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			context, file, err := remoteActionBuildContext(repo, test.actionPath, test.image)
++			if test.invalid {
++				require.Error(t, err)
++				return
++			}
++			require.NoError(t, err)
++			expected, err := filepath.EvalSymlinks(test.context)
++			require.NoError(t, err)
++			require.Equal(t, expected, context)
++			require.Equal(t, "Dockerfile", file)
++		})
++	}
++}
+diff --git a/act/runner/step_action_local.go b/act/runner/step_action_local.go
+index 73f57319..90a18370 100644
+--- a/act/runner/step_action_local.go
++++ b/act/runner/step_action_local.go
+@@ -12,6 +12,7 @@ import (
+ 	"path/filepath"
+ 
+ 	"code.forgejo.org/forgejo/runner/v13/act/common"
++	"code.forgejo.org/forgejo/runner/v13/act/container"
+ 	"code.forgejo.org/forgejo/runner/v13/act/model"
+ )
+ 
+@@ -73,7 +74,15 @@ func (sal *stepActionLocal) main() common.Executor {
+ 			}
+ 		}
+ 
+-		actionModel, err := sal.readAction(ctx, sal.Step, actionDir, "", localReader(ctx), os.WriteFile)
++		localWriter := func(filename string, data []byte, perm fs.FileMode) error {
++			_, containerDir := getContainerActionPaths(sal.Step, filepath.Dir(filename), sal.RunContext)
++			return sal.RunContext.JobContainer.Copy(containerDir, &container.FileEntry{
++				Name: filepath.Base(filename),
++				Mode: int64(perm),
++				Body: string(data),
++			})(ctx)
++		}
++		actionModel, err := sal.readAction(ctx, sal.Step, actionDir, "", localReader(ctx), localWriter)
+ 		if err != nil {
+ 			return err
+ 		}
+diff --git a/act/runner/step_action_local_test.go b/act/runner/step_action_local_test.go
+index d290e8f6..ec7fba77 100644
+--- a/act/runner/step_action_local_test.go
++++ b/act/runner/step_action_local_test.go
+@@ -4,11 +4,13 @@ import (
+ 	"bytes"
+ 	"context"
+ 	"io"
++	"os"
+ 	"path/filepath"
+ 	"strings"
+ 	"testing"
+ 
+ 	"code.forgejo.org/forgejo/runner/v13/act/common"
++	"code.forgejo.org/forgejo/runner/v13/act/container"
+ 	"code.forgejo.org/forgejo/runner/v13/act/model"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/mock"
+@@ -32,6 +34,9 @@ func (salm *stepActionLocalMocks) readAction(_ context.Context, step *model.Step
+ 
+ func TestStepActionLocalTest(t *testing.T) {
+ 	ctx := t.Context()
++	workdir := t.TempDir()
++	actionDir := filepath.Join(workdir, "path", "to", "action")
++	require.NoError(t, os.MkdirAll(actionDir, 0o700))
+ 
+ 	cm := &containerMock{}
+ 	salm := &stepActionLocalMocks{}
+@@ -43,7 +48,7 @@ func TestStepActionLocalTest(t *testing.T) {
+ 			StepResults: map[string]*model.StepResult{},
+ 			ExprEval:    &expressionEvaluator{},
+ 			Config: &Config{
+-				Workdir: "/tmp",
++				Workdir: workdir,
+ 			},
+ 			Run: &model.Run{
+ 				JobID: "1",
+@@ -67,8 +72,14 @@ func TestStepActionLocalTest(t *testing.T) {
+ 		},
+ 	}
+ 
+-	salm.On("readAction", sal.Step, filepath.Clean("/tmp/path/to/action"), "", mock.Anything, mock.Anything).
+-		Return(&model.Action{}, nil)
++	salm.On("readAction", sal.Step, actionDir, "", mock.Anything, mock.Anything).
++		Run(func(args mock.Arguments) {
++			writeFile := args.Get(4).(fileWriter)
++			require.NoError(t, writeFile(filepath.Join(actionDir, "trampoline.js"), []byte("fixture"), 0o400))
++		}).Return(&model.Action{}, nil)
++	cm.On("Copy", actionDir, mock.MatchedBy(func(files []*container.FileEntry) bool {
++		return len(files) == 1 && files[0].Name == "trampoline.js" && files[0].Body == "fixture" && files[0].Mode == 0o400
++	})).Return(func(context.Context) error { return nil }).Once()
+ 
+ 	cm.On("Copy", "/var/run/act", mock.AnythingOfType("[]*container.FileEntry")).Return(func(ctx context.Context) error {
+ 		return nil
+@@ -89,7 +100,7 @@ func TestStepActionLocalTest(t *testing.T) {
+ 	cm.On("GetContainerArchive", ctx, "/var/run/act/workflow/SUMMARY.md").Return(io.NopCloser(&bytes.Buffer{}), nil)
+ 	cm.On("GetContainerArchive", ctx, "/var/run/act/workflow/pathcmd.txt").Return(io.NopCloser(&bytes.Buffer{}), nil)
+ 
+-	salm.On("runAction", sal, filepath.Clean("/tmp/path/to/action"), (*remoteAction)(nil)).Return(func(ctx context.Context) error {
++	salm.On("runAction", sal, actionDir, (*remoteAction)(nil)).Return(func(ctx context.Context) error {
+ 		return nil
+ 	})
+ 
+@@ -98,6 +109,7 @@ func TestStepActionLocalTest(t *testing.T) {
+ 
+ 	err = sal.main()(ctx)
+ 	assert.Nil(t, err)
++	require.NoFileExists(t, filepath.Join(actionDir, "trampoline.js"))
+ 
+ 	cm.AssertExpectations(t)
+ 	salm.AssertExpectations(t)
+diff --git a/act/runner/step_action_remote.go b/act/runner/step_action_remote.go
+index 76a475c0..ef469b48 100644
+--- a/act/runner/step_action_remote.go
++++ b/act/runner/step_action_remote.go
+@@ -106,17 +106,29 @@ func (sar *stepActionRemote) prepareActionExecutor() common.Executor {
+ 			sar.workTree = wt
+ 		}
+ 
++		source, err := os.OpenRoot(sar.workTree.WorktreeDir())
++		if err != nil {
++			return err
++		}
++		defer source.Close()
+ 		remoteReader := func(ctx context.Context) actionYamlReader {
+ 			return func(filename string) (io.Reader, io.Closer, error) {
+-				f, err := os.Open(filepath.Join(sar.workTree.WorktreeDir(), sar.remoteAction.Path, filename))
++				f, err := source.Open(filepath.Join(sar.remoteAction.Path, filename))
+ 				return f, f, err
+ 			}
+ 		}
++		remoteWriter := func(filename string, data []byte, perm os.FileMode) error {
++			rel, err := filepath.Rel(sar.workTree.WorktreeDir(), filename)
++			if err != nil {
++				return err
++			}
++			return source.WriteFile(rel, data, perm)
++		}
+ 
+ 		return common.NewPipelineExecutor(
+ 			ntErr,
+ 			func(ctx context.Context) error {
+-				actionModel, err := sar.readAction(ctx, sar.Step, sar.workTree.WorktreeDir(), sar.remoteAction.Path, remoteReader(ctx), os.WriteFile)
++				actionModel, err := sar.readAction(ctx, sar.Step, sar.workTree.WorktreeDir(), sar.remoteAction.Path, remoteReader(ctx), remoteWriter)
+ 				sar.action = actionModel
+ 				return err
+ 			},
+diff --git a/act/runner/step_action_remote_test.go b/act/runner/step_action_remote_test.go
+index 90725e40..402a8fd1 100644
+--- a/act/runner/step_action_remote_test.go
++++ b/act/runner/step_action_remote_test.go
+@@ -43,7 +43,7 @@ func (t *UselessWorktree) Close(_ context.Context) error {
+ }
+ 
+ func (t *UselessWorktree) WorktreeDir() string {
+-	return ""
++	return "."
+ }
+ 
+ // dirWorktree is backed by a directory so that the action it holds can be read
