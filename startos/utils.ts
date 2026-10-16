@@ -37,7 +37,7 @@ export const runnerTiers = {
   },
   build: {
     subcontainerName: 'forgejo-build-runner-sub',
-    display: 'Build Runner',
+    display: 'Privileged Runner',
     foreignLabelPrefix: 'startos-build',
     privileged: true,
     bridge: 'runner-build',
@@ -124,7 +124,7 @@ export function validateRunners(
   const buildLabels = runnerLabels(store.buildRunner, 'build')
   if (!store.buildRunner.runnerUuid || !store.buildRunner.runnerToken) {
     throw new Error(
-      i18n('Configure the Build Runner credentials before enabling it.'),
+      i18n('Configure the Privileged Runner credentials before enabling it.'),
     )
   }
   if (store.runnerUuid === store.buildRunner.runnerUuid) {
