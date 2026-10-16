@@ -70,7 +70,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     )
     const rejection = rejectedUuid(tier)
     const configureAction = profile.privileged
-      ? i18n('Configure Build Runner')
+      ? i18n('Configure Privileged Runner')
       : i18n('Configure')
     return {
       ownData: {
@@ -163,7 +163,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
                   result: 'failure' as const,
                   message: profile.privileged
                     ? i18n(
-                        'Forgejo no longer recognizes the build runner. Create a new scoped registration and enter it in Configure Build Runner.',
+                        'Forgejo no longer recognizes the privileged runner. Create a new scoped registration and enter it in Configure Privileged Runner.',
                       )
                     : i18n(
                         'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',

@@ -7,9 +7,9 @@ export const configureBuild = sdk.Action.withInput(
   'configure-build',
 
   async ({ effects }) => ({
-    name: i18n('Configure Build Runner'),
+    name: i18n('Configure Privileged Runner'),
     description: i18n(
-      'Configure the optional privileged build runner. Saving restarts both runners.',
+      'Configure the optional privileged runner. Saving restarts both runners.',
     ),
     warning: i18n(
       'Use a separate registration scoped to trusted repositories or an organization, not a site-wide runner. Labels are not access control. Both runners share the outer StartOS service boundary.',
@@ -21,7 +21,7 @@ export const configureBuild = sdk.Action.withInput(
 
   sdk.InputSpec.of({
     enabled: sdk.Value.toggle({
-      name: i18n('Enable Build Runner'),
+      name: i18n('Enable Privileged Runner'),
       description: i18n(
         'Allow privileged jobs with access to this runner’s Docker engine. Disabled by default.',
       ),
