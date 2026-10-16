@@ -37,7 +37,7 @@ Saving **Configure** interrupts active jobs and restarts execution. **Concurrent
 
 ## Images and emulation
 
-The first use of an image downloads it. Container mode retains image caches; VM job caches disappear with the job, so use workflow-managed external caches or artifact storage where appropriate.
+The first use of an image downloads it. Container mode retains image caches; VM job caches disappear with the job, so use workflow-managed external caches or artifact storage where appropriate. The runner fetches `uses:` action sources separately for each job in either mode.
 
 Enable **Enable Emulation** to serve the other CPU architecture. On an x86_64 device, this adds `linux-arm64`; on an ARM64 device it adds `linux-amd64`. Emulated jobs are slower. Labels must use `name:docker://image`; host-execution labels are unsupported.
 

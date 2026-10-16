@@ -1,0 +1,177 @@
+Subject: [PATCH] Give each assigned job a private action-source cache
+
+Retire when upstream isolates action-source repositories per job and abandoned Git locks cannot poison later jobs.
+
+diff --git a/internal/app/run/job_action_cache_test.go b/internal/app/run/job_action_cache_test.go
+new file mode 100644
+index 00000000..b803433c
+--- /dev/null
++++ b/internal/app/run/job_action_cache_test.go
+@@ -0,0 +1,114 @@
++// SPDX-License-Identifier: GPL-3.0-or-later
++
++package run
++
++import (
++	"bytes"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	gitcache "code.forgejo.org/forgejo/runner/v13/act/common/git"
++	"github.com/stretchr/testify/require"
++)
++
++func TestJobActionCacheDirectories(t *testing.T) {
++	parent := filepath.Join(t.TempDir(), "new-parent")
++	first, err := newJobActionCache(parent)
++	require.NoError(t, err)
++	second, err := newJobActionCache(parent)
++	require.NoError(t, err)
++	require.NotEqual(t, first, second)
++	require.Equal(t, parent, filepath.Dir(first))
++	info, err := os.Stat(first)
++	require.NoError(t, err)
++	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
++
++	defaultDir, err := newJobActionCache("")
++	require.NoError(t, err)
++	t.Cleanup(func() { _ = os.RemoveAll(defaultDir) })
++	require.True(t, filepath.IsAbs(defaultDir))
++
++	file := filepath.Join(parent, "not-a-directory")
++	require.NoError(t, os.WriteFile(file, nil, 0o600))
++	_, err = newJobActionCache(file)
++	require.Error(t, err)
++}
++
++func TestJobActionCacheConcurrentProcessesIgnoreStaleLock(t *testing.T) {
++	root := t.TempDir()
++	remote := filepath.Join(root, "remote")
++	runGit := func(args ...string) string {
++		t.Helper()
++		output, err := exec.Command("git", args...).CombinedOutput()
++		require.NoError(t, err, "%s", output)
++		return strings.TrimSpace(string(output))
++	}
++	runGit("init", "--initial-branch=main", remote)
++	runGit("-C", remote, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-m", "fixture")
++	expected := runGit("-C", remote, "rev-parse", "HEAD")
++	url := "file://" + filepath.ToSlash(remote)
++	parent := filepath.Join(root, "cache")
++	oldCache, err := newJobActionCache(parent)
++	require.NoError(t, err)
++	wt, err := gitcache.Clone(t.Context(), gitcache.CloneInput{CacheDir: oldCache, URL: url, Ref: "main"})
++	require.NoError(t, err)
++	commonDir := runGit("-C", wt.WorktreeDir(), "rev-parse", "--git-common-dir")
++	require.NoError(t, wt.Close(t.Context()))
++	lock := filepath.Join(commonDir, "shallow.lock")
++	require.NoError(t, os.WriteFile(lock, []byte("do not remove another job's lock"), 0o600))
++	_, err = gitcache.Clone(t.Context(), gitcache.CloneInput{CacheDir: oldCache, URL: url, Ref: "main"})
++	require.ErrorContains(t, err, "shallow.lock")
++
++	executable, err := os.Executable()
++	require.NoError(t, err)
++	var commands []*exec.Cmd
++	var outputs []*bytes.Buffer
++	var results []string
++	for index := range 2 {
++		result := filepath.Join(root, fmt.Sprintf("result-%d", index))
++		cmd := exec.CommandContext(t.Context(), executable, "-test.run=^TestJobActionCacheChild$")
++		cmd.Env = append(os.Environ(),
++			"FORGEJO_CACHE_TEST_CHILD=1",
++			"FORGEJO_CACHE_TEST_PARENT="+parent,
++			"FORGEJO_CACHE_TEST_URL="+url,
++			"FORGEJO_CACHE_TEST_SHA="+expected,
++			"FORGEJO_CACHE_TEST_RESULT="+result,
++		)
++		output := &bytes.Buffer{}
++		cmd.Stdout, cmd.Stderr = output, output
++		require.NoError(t, cmd.Start())
++		commands, outputs, results = append(commands, cmd), append(outputs, output), append(results, result)
++	}
++	var caches []string
++	for index, cmd := range commands {
++		require.NoError(t, cmd.Wait(), "%s", outputs[index])
++		cache, err := os.ReadFile(results[index])
++		require.NoError(t, err)
++		caches = append(caches, string(cache))
++		require.NotEqual(t, oldCache, string(cache))
++	}
++	require.NotEqual(t, caches[0], caches[1])
++	contents, err := os.ReadFile(lock)
++	require.NoError(t, err)
++	require.Equal(t, "do not remove another job's lock", string(contents))
++}
++
++func TestJobActionCacheChild(t *testing.T) {
++	if os.Getenv("FORGEJO_CACHE_TEST_CHILD") != "1" {
++		t.Skip("subprocess helper")
++	}
++	cache, err := newJobActionCache(os.Getenv("FORGEJO_CACHE_TEST_PARENT"))
++	require.NoError(t, err)
++	defer os.RemoveAll(cache)
++	wt, err := gitcache.Clone(t.Context(), gitcache.CloneInput{CacheDir: cache, URL: os.Getenv("FORGEJO_CACHE_TEST_URL"), Ref: "main"})
++	require.NoError(t, err)
++	defer wt.Close(t.Context())
++	_, sha, err := gitcache.ResolveHead(t.Context(), wt.WorktreeDir())
++	require.NoError(t, err)
++	require.Equal(t, os.Getenv("FORGEJO_CACHE_TEST_SHA"), sha)
++	require.NoError(t, os.WriteFile(os.Getenv("FORGEJO_CACHE_TEST_RESULT"), []byte(cache), 0o600))
++}
+diff --git a/internal/app/run/runner.go b/internal/app/run/runner.go
+index 4327d615..e2336162 100644
+--- a/internal/app/run/runner.go
++++ b/internal/app/run/runner.go
+@@ -11,6 +11,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"maps"
++	"os"
+ 	"path/filepath"
+ 	"strconv"
+ 	"strings"
+@@ -150,6 +151,20 @@ func SetupCache(cfg *config.Config) *cacheproxy.Handler {
+ 	return cacheProxy
+ }
+ 
++func newJobActionCache(parent string) (string, error) {
++	if parent != "" {
++		var err error
++		parent, err = filepath.Abs(filepath.FromSlash(parent))
++		if err != nil {
++			return "", err
++		}
++		if err := os.MkdirAll(parent, 0o700); err != nil {
++			return "", err
++		}
++	}
++	return os.MkdirTemp(parent, "forgejo-runner-actions-")
++}
++
+ func (r *Runner) Run(ctx context.Context, task *runnerv1.Task) {
+ 	if _, loaded := r.runningTasks.LoadOrStore(task.Id, struct{}{}); loaded {
+ 		// Normally the responsibility of Run() is to ensure that, no matter what occurs within running the job, a
+@@ -342,12 +357,18 @@ func (r *Runner) run(ctx context.Context, task *runnerv1.Task, reporter *report.
+ 		}
+ 	}
+ 
++	actionCacheDir, err := newJobActionCache(r.cfg.Host.WorkdirParent)
++	if err != nil {
++		return fmt.Errorf("create job action cache: %w", err)
++	}
++	defer os.RemoveAll(actionCacheDir)
++
+ 	runnerConfig := &runner.Config{
+ 		// On Linux, Workdir will be like "/<parent_directory>/<owner>/<repo>"
+ 		// On Windows, Workdir will be like "\<parent_directory>\<owner>\<repo>"
+ 		Workdir:        filepath.FromSlash(filepath.Clean(fmt.Sprintf("/%s/%s", r.cfg.Container.WorkdirParent, preset.Repository))),
+ 		BindWorkdir:    false,
+-		ActionCacheDir: filepath.FromSlash(r.cfg.Host.WorkdirParent),
++		ActionCacheDir: actionCacheDir,
+ 
+ 		ReuseContainers:            false,
+ 		ForcePull:                  r.cfg.Container.ForcePull,

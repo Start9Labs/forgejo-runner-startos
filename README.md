@@ -68,6 +68,8 @@ VM jobs bind guest-local `/var/lib/runner-scratch` at `/root/setup-docker-action
 
 Each controller regenerates `/data/runner/config.yaml` at launch from settings and the resolved Forgejo address. Hand edits do not survive. Runner privilege policy, engine endpoint and mounts are package-controlled. Controller Docker clients use an empty registry-auth configuration; job-provided credentials are distinct from controller credentials.
 
+Every assigned job gets a private controller-side action-source cache, removed when execution returns. Actions can reuse fetched sources within that job but are fetched separately for subsequent jobs in both modes. Abandoned Git locks in an older cache cannot block a new job; the runner does not delete lock files from another job's cache.
+
 A controller's `runner/rejected-uuid` records a registration Forgejo no longer recognizes. The entrypoint waits instead of repeatedly reconnecting with that UUID. Changing the configured UUID clears that condition on the next launch.
 
 ## Dependencies

@@ -7,7 +7,7 @@ RUN for file in /patches/*.patch; do git apply "$file"; done
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go test -short -run '^Test(Action|RemoteAction|StepActionLocal|StepActionRemote)' ./act/runner \
  && CGO_ENABLED=0 go test -short ./act/container/docker \
- && CGO_ENABLED=0 go test -short -run '^TestBeforeJob' ./internal/app/run ./internal/app/cmd ./internal/pkg/config \
+ && CGO_ENABLED=0 go test -short -run '^Test(BeforeJob|JobActionCache)' ./internal/app/run ./internal/app/cmd ./internal/pkg/config \
  && CGO_ENABLED=0 go test -short ./internal/app/poll
 ARG TARGETOS
 ARG TARGETARCH
