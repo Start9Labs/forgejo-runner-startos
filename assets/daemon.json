@@ -1,0 +1,7 @@
+{
+  "storage-driver": "fuse-overlayfs",
+  "default-runtime": "runc-nested",
+  "runtimes": {
+    "runc-nested": { "path": "/usr/local/bin/runc-nested" }
+  }
+}

@@ -2,50 +2,69 @@
 
 ## Documentation
 
-- [Forgejo Actions documentation](https://forgejo.org/docs/latest/admin/actions/) — upstream reference for workflow syntax, runners, and the Actions admin settings.
+- [Forgejo Actions documentation](https://forgejo.org/docs/latest/admin/actions/) — workflows, runners, and runner access control.
 
 ## What you get on StartOS
 
-A CI/CD runner that executes Forgejo Actions workflows for the **Forgejo on this device**. Each job runs in its own isolated, rootless container, and foreign-architecture container images run under emulation automatically. The runner has no interface of its own — you see it and its job logs inside Forgejo, in its Runners list and the Actions tab.
+You can run two registrations against the **Forgejo on this device**:
+
+- **Runner:** the default, unprivileged runner for ordinary jobs. Jobs do not receive its Docker socket or build scratch.
+- **Build Runner:** optional and disabled by default. It supports privileged Docker/Buildx jobs using a separate engine and working area.
+
+You see jobs and logs in Forgejo's **Actions** tab, and connection health here. These runners share one StartOS service boundary: do not treat them as separate VMs or services for mutually hostile workloads.
 
 ## Getting set up
 
-This runner serves the Forgejo on the same device, so install and start **Forgejo** first, with Forgejo Actions enabled (the default). A critical **Configure** task keeps the runner stopped until you save its UUID and token.
+Forgejo must be running on this device with Actions enabled.
 
-1. In Forgejo, go to **Site / Organization / Repository Settings → Actions → Runners → Create new Runner**. Copy the **UUID** and the **token** it shows you.
-2. Open the **Configure** task here and paste in the UUID and token. Adjust the labels and concurrent-jobs count if you like — the default `ubuntu-latest` label runs jobs in a standard Ubuntu image.
-3. Start the service if it is not running; saving restarts a running one. It connects to Forgejo and begins picking up jobs; it should appear as **Online** in Forgejo's Runners.
+1. In Forgejo, open **Site / Organization / Repository Settings → Actions → Runners → Create new Runner** for your ordinary jobs. Copy the UUID and token.
+2. Complete **Configure** here with those credentials. Its default label is `ubuntu-latest`.
+3. Start the service. The registration should appear online in Forgejo, and jobs using `runs-on: ubuntu-latest` can run.
 
-> Forgejo v12 replaced the old single-use registration token with durable runner credentials, so the UUID + token you paste here keep working — there is nothing to refresh between restarts.
+### Enable privileged builds
 
-If Forgejo is reinstalled, it no longer knows this runner: the **Runner** health check asks you to create a new runner in Forgejo, enter its UUID and token in **Configure**, and restart.
+1. In Forgejo, create a **different registration under the trusted repository or organization**, not at site level. Everyone who can change code executed by this runner must be trusted with its engine and build data.
+2. Open **Configure Build Runner**, enable it, and enter that registration's UUID and token. Keep the default `startos-build` label unless you also change your workflows.
+3. Set privileged workflow jobs to:
 
-## Using Forgejo Runner
+   ```yaml
+   runs-on: startos-build
+   ```
 
-Once it is online, Forgejo dispatches workflow jobs to it automatically — there is nothing to drive here day to day. Follow progress and read job logs in Forgejo's **Actions** tab; here, the **Runner** health check shows whether it is up, and the service logs show startup and connection.
+   Use `ubuntu-latest` for ordinary jobs. The two registrations must use different labels and UUIDs.
 
-### Labels and architecture
+**Labels are routing, not access control.** An untrusted repository can request any label. Its access must be denied by the build runner's repository/organization registration scope. Only use an organization scope if all repositories it covers are trusted.
 
-A workflow's `runs-on:` is matched against the runner's labels. To also serve jobs built for the other CPU architecture, turn on **Enable Emulation** in **Configure** — it adds a label for that architecture and runs its jobs under emulation. They work, but are much slower than native, so prefer a separate runner on native hardware for each architecture you build for regularly.
+Saving either configuration restarts both runners and can interrupt jobs. To stop privileged builds while keeping ordinary jobs, turn off **Enable Build Runner** in **Configure Build Runner**. Its existing working data remains available if you enable it again.
 
-### First run
+## Using the runners
 
-The first job on each label pulls its container image before anything else runs — the default
-`ubuntu-latest` image is about 1 GB, so **Set up job** can sit for a minute or two showing only a
-spinner. The image is cached afterward; later runs start in seconds.
+Forgejo dispatches jobs automatically. Check its Actions tab for job progress and this service's **Runner** and **Build Runner** health checks for connection problems.
 
-### Checking out your repository
+### Images and emulation
 
-To check out the repository a workflow belongs to, use the standard action — it authenticates
-automatically with the job's token, so private repositories work with no extra setup:
+The first job for an image downloads it, which can take several minutes. Later jobs reuse that runner's cache; each runner has its own cache.
+
+Turn on **Enable Emulation** in the corresponding configuration when needed. On an x86_64 device, the default runner adds `linux-arm64`, while the build runner adds `startos-build-arm64`. On an ARM64 device, the corresponding suffix is `amd64`. Emulated jobs are slower than native ones.
+
+Labels must use `name:docker://image`. Host-execution labels are not accepted.
+
+### Docker-in-Docker
+
+Use the build runner for Docker-in-Docker workflows. It provides an engine socket from the start of the job. If `docker/setup-docker-action` starts another daemon, its default working directory is backed by build scratch rather than the job's layered root filesystem. Cached images and scratch are excluded from backups.
+
+The ordinary runner deliberately does not provide an engine socket or privileged containers. A job cannot opt into those privileges merely by setting container options.
+
+If a reusable build workflow hard-codes `ubuntu-latest`, either use a workflow that selects `startos-build`, or give `ubuntu-latest` to the build runner and change the ordinary runner to a different label. Never advertise the same label on both.
+
+### Checking out repositories
+
+For the workflow's own Forgejo repository, use the standard checkout action, which authenticates with the job token:
 
 ```yaml
-- uses: actions/checkout@v4
+- uses: https://github.com/actions/checkout@v4
 ```
 
-To clone in a plain `run:` step instead, authenticate with the job's token; the in-job clone URL
-is anonymous by default and fails on private repositories:
+### Replacing a forgotten registration
 
-```yaml
-- run: git clone "http://ci:${{ github.token }}@${GITHUB_SERVER_URL#*://}/${GITHUB_REPOSITORY}.git" .
-```
+If Forgejo has been reinstalled or a registration deleted, its health check asks for new credentials. Create a replacement in Forgejo and update **Configure** or **Configure Build Runner**, matching the affected registration. Replacing one registration does not replace the other.

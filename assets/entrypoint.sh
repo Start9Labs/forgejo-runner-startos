@@ -1,6 +1,5 @@
 #!/bin/bash
-# Orchestrates a rootless Podman engine + the Forgejo Runner inside the service
-# container. main.ts passes the forge connection via the environment.
+# main.ts supplies the engine socket and Forgejo connection.
 set -euo pipefail
 
 : "${INSTANCE_URL:=}"
@@ -8,37 +7,20 @@ set -euo pipefail
 : "${RUNNER_TOKEN:=}"
 : "${RUNNER_LABELS:=}"
 : "${RUNNER_CAPACITY:=1}"
+: "${RUNNER_CONFIGURE_ACTION:=Configure}"
+: "${RUNNER_SCRATCH_DIR:?}"
+: "${RUNNER_PRIVILEGED:?}"
+case "$RUNNER_PRIVILEGED" in true|false) ;; *) exit 1 ;; esac
 
-# App-owned working area (chowned by the own-data oneshot); StartOS's own
-# store.json stays at /data and is left untouched.
+# Only this tier's working directory is mounted at /data.
 DATA=/data/runner
 CONFIG="$DATA/config.yaml"
 cd "$DATA"
 
-# Podman needs a writable XDG_RUNTIME_DIR for its socket + transient state.
-export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/data/runner/run}"
-mkdir -p "$XDG_RUNTIME_DIR/podman" "$XDG_RUNTIME_DIR/containers" "$DATA/containers/storage"
-chmod 700 "$XDG_RUNTIME_DIR"
-SOCK="$XDG_RUNTIME_DIR/podman/podman.sock"
-
-# Bring up the Podman API socket (docker-compatible) the runner drives. Layer
-# store lives on the data volume so job images survive restarts;
-# --cgroup-manager=cgroupfs because there's no user systemd session here.
-podman --root "$DATA/containers/storage" --runroot "$XDG_RUNTIME_DIR/containers" \
-       --cgroup-manager=cgroupfs system service -t 0 "unix://$SOCK" &
-export DOCKER_HOST="unix://$SOCK"
-
-# Wait until the Podman API actually answers — not just the socket file
-# appearing — so the runner daemon doesn't race a half-up socket.
-for _ in $(seq 1 60); do
-  podman --remote --url "unix://$SOCK" info >/dev/null 2>&1 && break
-  sleep 1
-done
-
 # Without credentials the forge connection is incomplete; stay alive so the
 # health check can report 'needs config' instead of crash-looping.
 if [ -z "$INSTANCE_URL" ] || [ -z "$RUNNER_UUID" ] || [ -z "$RUNNER_TOKEN" ]; then
-  echo "forgejo-runner: not configured. Run the 'Configure' action with the" \
+  echo "forgejo-runner: not configured. Run '$RUNNER_CONFIGURE_ACTION' with the" \
        "runner UUID + token from Forgejo's 'Create new Runner' page, then" \
        "restart this service." >&2
   exec sleep infinity
@@ -49,7 +31,18 @@ fi
 # config each start so Configure changes always take effect, then inject our
 # connection under the (otherwise empty) server.connections map.
 forgejo-runner generate-config >"$CONFIG"
-sed -i "s/^  capacity: .*/  capacity: ${RUNNER_CAPACITY}/" "$CONFIG"
+sed -i \
+  -e "s/^  capacity: .*/  capacity: ${RUNNER_CAPACITY}/" \
+  -e "s/^  privileged: false$/  privileged: ${RUNNER_PRIVILEGED}/" \
+  "$CONFIG"
+if [ "$RUNNER_PRIVILEGED" = true ]; then
+  RESOLV_CONF=/etc/resolv.conf
+  sed -i \
+    -e 's|^  docker_host: "-"$|  docker_host: "automount"|' \
+    -e "s|^  options:$|  options: \"--volume ${RUNNER_SCRATCH_DIR}:/root/setup-docker-action --volume ${RESOLV_CONF}:${RESOLV_CONF}:ro\"|" \
+    -e "s|^  valid_volumes: \[\]$|  valid_volumes: [\"${RUNNER_SCRATCH_DIR}\", \"${RESOLV_CONF}\"]|" \
+    "$CONFIG"
+fi
 awk -v url="$INSTANCE_URL" -v uuid="$RUNNER_UUID" -v token="$RUNNER_TOKEN" -v labels="$RUNNER_LABELS" '
   { print }
   /^  connections:[[:space:]]*$/ && !done {
@@ -66,11 +59,15 @@ awk -v url="$INSTANCE_URL" -v uuid="$RUNNER_UUID" -v token="$RUNNER_TOKEN" -v la
   }
 ' "$CONFIG" >"$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
 
+wait_for_registration() {
+  echo "forgejo-runner: Forgejo no longer recognizes this runner. Create a new" \
+       "runner in Forgejo, enter its UUID and token in '$RUNNER_CONFIGURE_ACTION', then restart." >&2
+  exec sleep infinity
+}
+
 REJECTED="$DATA/rejected-uuid"
 if [ "$(cat "$REJECTED" 2>/dev/null)" = "$RUNNER_UUID" ]; then
-  echo "forgejo-runner: Forgejo no longer recognizes this runner. Create a new" \
-       "runner in Forgejo, enter its UUID and token in Configure, then restart." >&2
-  exec sleep infinity
+  wait_for_registration
 fi
 rm -f "$REJECTED"
 
@@ -89,8 +86,6 @@ wait "$tee_pid" || true
 # Forgejo answers "unregistered runner" once its database no longer holds this UUID.
 if grep -qE '^Error: ([a-z_]+: )?unregistered runner$' "$LOG"; then
   printf '%s' "$RUNNER_UUID" >"$REJECTED"
-  echo "forgejo-runner: Forgejo no longer recognizes this runner. Create a new" \
-       "runner in Forgejo, enter its UUID and token in Configure, then restart." >&2
-  exec sleep infinity
+  wait_for_registration
 fi
 exit "$status"
