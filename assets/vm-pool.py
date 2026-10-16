@@ -286,27 +286,31 @@ def serve():
             (CONTROL.parent / 'manager.pid').unlink(missing_ok=True)
 
 
-def exchange(operation, identity, slot):
-    with socket.socket(socket.AF_UNIX) as connection:
-        connection.settimeout(10 if operation in ('release', 'status') else None)
-        connection.connect(str(CONTROL))
-        connection.sendall((json.dumps({'operation': operation, 'identity': identity, 'slot': slot}) + '\n').encode())
-        with connection.makefile('rb') as stream:
-            payload = stream.readline(65536)
-            if not payload:
-                raise ConnectionError('Memory controller connection closed')
-            response = json.loads(payload)
-        if 'error' in response:
-            raise RuntimeError(response['error'])
-        return response['result']
+def exchange(connection, operation, identity, slot):
+    connection.sendall((json.dumps({'operation': operation, 'identity': identity, 'slot': slot}) + '\n').encode())
+    with connection.makefile('rb') as stream:
+        payload = stream.readline(65536)
+        if not payload:
+            raise ConnectionError('Memory controller connection closed')
+        response = json.loads(payload)
+    if 'error' in response:
+        raise RuntimeError(response['error'])
+    return response['result']
 
 
 def client(operation, identity=None, slot=None):
-    deadline = time.monotonic() + (30 if operation in ('acquire', 'started') else 0)
+    patience = 30 if operation in ('acquire', 'started') else 0
+    deadline = None
     while True:
         try:
-            return exchange(operation, identity, slot)
+            with socket.socket(socket.AF_UNIX) as connection:
+                connection.settimeout(10 if operation in ('release', 'status') else None)
+                connection.connect(str(CONTROL))
+                deadline = None
+                return exchange(connection, operation, identity, slot)
         except OSError:
+            if deadline is None:
+                deadline = time.monotonic() + patience
             if time.monotonic() >= deadline:
                 raise
             time.sleep(.25)

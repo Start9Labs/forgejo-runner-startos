@@ -18,7 +18,7 @@ The Docker build runs focused action tests, Docker backend tests and the assigne
 
 The prepared cache fingerprint includes the image metadata, host architecture, cloud-init template and preparation/VM helpers. Provisioning changes rebuild the cache at the next virtualized start. To refresh guest packages without changing the cloud release, make the preparation input change explicit rather than mutating a cached disk by hand.
 
-The guest kernel must support virtio-mem and movable memory hotplug. Verify actual QMP device-size acknowledgement for both growth and shrink, not just a successful requested-size command. Initial expansion stays zero until cloud-init enables movable onlining and Docker is ready. Never grant reclaimed memory to a second guest before shrink acknowledgement.
+The guest kernel must support virtio-mem and movable memory hotplug. Verify actual QMP device-size acknowledgement for both growth and shrink, not just a successful requested-size command. Initial expansion stays zero until cloud-init enables movable onlining and Docker is ready. Never grant reclaimed memory to a second guest before shrink acknowledgement. Verify broker recovery after a memory-admission wait longer than its reconnect window; repeated outages must each receive a fresh recovery window.
 
 Verify a first preparation, a cache-hit restart, zero idle guests, distinct consecutive guest boots, a lone job borrowing the pool, concurrent redistribution, and a job that uses a foreign-architecture image. An ARM64 firmware boot under TCG validates image/firmware wiring, not native ARM64 KVM execution; report that distinction when native hardware is unavailable. The production launcher always requests KVM and never falls back to TCG.
 
