@@ -35,6 +35,5 @@ verified, tried, and decided belongs in the commit message and the PR body.
 ## This repo
 
 - **Don't drop `git` from the image.** The runner fetches `uses:` actions with the git CLI, and without it every such step fails with an exec error that never names the cause.
-- **Keep the `subuid`/`subgid` range above `app`'s uid and inside the subcontainer's userns** (1001–65535 for uid 1000); overlapping or exceeding it breaks nested user namespaces.
-- **`own-data` chowns only `runner/`, and `clean-runtime` requires it.** `store.json` shares the mount and must keep its own ownership; entries with no requirements run concurrently, and `own-data`'s `chown -R` walks the tree `clean-runtime` deletes.
-- **`primary`'s `ready.fn` must observe the process itself.** It overwrites the crash status the SDK sets when the process exits, so a check that reports on stored configuration paints a crash loop green.
+- **Don't recursively chown the data mount.** `store.json` must retain its ownership, and engine layers contain meaningful UID/GID ownership.
+- **Both runner health checks must observe their own process.** `ready.fn` overwrites the SDK's crash status, so a configuration-only check paints a crash loop green.

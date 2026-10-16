@@ -10,7 +10,7 @@ export const manifest = setupManifest({
   marketingUrl: 'https://forgejo.org/',
   donationUrl: null,
   description: { short, long },
-  volumes: ['main'],
+  volumes: ['main', 'scratch'],
   images: {
     main: {
       source: { dockerBuild: { workdir: '.' } },
@@ -18,11 +18,5 @@ export const manifest = setupManifest({
       emulateMissing: false,
     },
   },
-  // Run a rootless Podman engine inside the service to sandbox each CI job.
-  // It needs both device grants the former nestedRuntime flag bundled:
-  // userspaceFilesystems for /dev/fuse (fuse-overlayfs storage) and
-  // virtualNetworking for /dev/net/tun (slirp4netns job networking).
-  // See start-docs recipe-nested-oci-runtime.
   userspaceFilesystems: true,
-  virtualNetworking: true,
 })

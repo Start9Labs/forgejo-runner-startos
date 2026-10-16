@@ -13,3 +13,7 @@
 - **Applying the bump:**
   1. `Dockerfile` — set the tag on `FROM code.forgejo.org/forgejo/runner:<version> AS runner` (no leading `v`).
   2. `startos/versions/current.ts` — set `version: '<version>:0'`, or bump only the `:N` suffix if just the packaging changed. Update the release notes.
+
+## Bundled QEMU
+
+The `binfmt` build stage pins `tonistiigi/binfmt` by multi-architecture index digest. To refresh it alongside a package update, inspect `docker buildx imagetools inspect tonistiigi/binfmt:latest`, verify x86_64 and aarch64 manifests, and replace the digest in `Dockerfile`. Verify a foreign-architecture container and an emulated image build on StartOS; a successful registration command alone does not prove the interpreter remains registered after that process exits.
