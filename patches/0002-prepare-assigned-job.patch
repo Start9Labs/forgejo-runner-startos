@@ -1,0 +1,216 @@
+Subject: [PATCH] Prepare an assigned job before opening its Docker endpoint
+
+Retire when upstream supports cancellation-aware per-job provisioning before Docker availability validation.
+
+diff --git a/internal/app/cmd/before_job_test.go b/internal/app/cmd/before_job_test.go
+new file mode 100644
+index 00000000..b0eaff77
+--- /dev/null
++++ b/internal/app/cmd/before_job_test.go
+@@ -0,0 +1,37 @@
++package cmd
++
++import (
++	"os"
++	"testing"
++
++	"code.forgejo.org/forgejo/runner/v13/internal/pkg/config"
++	"code.forgejo.org/forgejo/runner/v13/internal/pkg/labels"
++	"github.com/stretchr/testify/require"
++)
++
++func TestBeforeJobDefersDockerAvailability(t *testing.T) {
++	t.Setenv("DOCKER_HOST", "")
++	cfg := &config.Config{}
++	cfg.Container.DockerHost = "unix:///nonexistent/deferred-job-docker.sock"
++	cfg.Server.Connections = map[string]*config.Connection{
++		"fixture": {Labels: labels.Labels{&labels.Label{Name: "fixture", Schema: labels.SchemeDocker, Arg: "//alpine"}}},
++	}
++	cfg.Runner.BeforeJob = []string{"/trusted/prepare"}
++	require.NoError(t, configCheck(t.Context(), cfg))
++	cfg.Runner.BeforeJob = nil
++	require.Error(t, configCheck(t.Context(), cfg))
++}
++
++func TestBeforeJobPreservesRemoteEndpointNormalization(t *testing.T) {
++	endpoint := "tcp://127.0.0.1:23750"
++	t.Setenv("DOCKER_HOST", "")
++	cfg := &config.Config{}
++	cfg.Container.DockerHost = endpoint
++	cfg.Server.Connections = map[string]*config.Connection{
++		"fixture": {Labels: labels.Labels{{Name: "fixture", Schema: labels.SchemeDocker, Arg: "//alpine"}}},
++	}
++	cfg.Runner.BeforeJob = []string{"/trusted/prepare"}
++	require.NoError(t, configCheck(t.Context(), cfg))
++	require.Equal(t, endpoint, os.Getenv("DOCKER_HOST"))
++	require.Equal(t, "-", cfg.Container.DockerHost)
++}
+diff --git a/internal/app/cmd/daemon.go b/internal/app/cmd/daemon.go
+index dc923bc0..7931f210 100644
+--- a/internal/app/cmd/daemon.go
++++ b/internal/app/cmd/daemon.go
+@@ -171,8 +171,10 @@ var configCheck = func(ctx context.Context, cfg *config.Config) error {
+ 		if err != nil {
+ 			return err
+ 		}
+-		if err := envcheck.CheckIfDockerRunning(ctx, dockerSocketPath); err != nil {
+-			return err
++		if len(cfg.Runner.BeforeJob) == 0 {
++			if err := envcheck.CheckIfDockerRunning(ctx, dockerSocketPath); err != nil {
++				return err
++			}
+ 		}
+ 		os.Setenv("DOCKER_HOST", dockerSocketPath)
+ 		if cfg.Container.DockerHost == "automount" {
+diff --git a/internal/app/run/before_job.go b/internal/app/run/before_job.go
+new file mode 100644
+index 00000000..0cff96d8
+--- /dev/null
++++ b/internal/app/run/before_job.go
+@@ -0,0 +1,31 @@
++package run
++
++import (
++	"context"
++	"io"
++	"os/exec"
++	"strings"
++	"time"
++
++	"code.forgejo.org/forgejo/runner/v13/internal/pkg/report"
++)
++
++type preparationLog struct {
++	reporter *report.Reporter
++}
++
++func (w preparationLog) Write(p []byte) (int, error) {
++	w.reporter.Logf("%s", strings.TrimSuffix(string(p), "\n"))
++	return len(p), nil
++}
++
++func runBeforeJob(ctx context.Context, command []string, output io.Writer) error {
++	if len(command) == 0 {
++		return nil
++	}
++	cmd := exec.CommandContext(ctx, command[0], command[1:]...)
++	cmd.Stdout = output
++	cmd.Stderr = output
++	cmd.WaitDelay = 5 * time.Second
++	return cmd.Run()
++}
+diff --git a/internal/app/run/before_job_test.go b/internal/app/run/before_job_test.go
+new file mode 100644
+index 00000000..d00bf263
+--- /dev/null
++++ b/internal/app/run/before_job_test.go
+@@ -0,0 +1,37 @@
++package run
++
++import (
++	"bytes"
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestBeforeJobPreparation(t *testing.T) {
++	t.Run("absent hook", func(t *testing.T) {
++		require.NoError(t, runBeforeJob(t.Context(), nil, &bytes.Buffer{}))
++	})
++	t.Run("completion precedes execution", func(t *testing.T) {
++		marker := filepath.Join(t.TempDir(), "prepared")
++		var output bytes.Buffer
++		require.NoError(t, runBeforeJob(t.Context(), []string{"sh", "-ec", "printf ready; printf done > \"$1\"", "hook", marker}, &output))
++		data, err := os.ReadFile(marker)
++		require.NoError(t, err)
++		require.Equal(t, "done", string(data))
++		require.Equal(t, "ready", output.String())
++	})
++	t.Run("failed provisioning fails job", func(t *testing.T) {
++		require.Error(t, runBeforeJob(t.Context(), []string{"sh", "-c", "exit 7"}, &bytes.Buffer{}))
++	})
++	t.Run("cancellation interrupts provisioning", func(t *testing.T) {
++		ctx, cancel := context.WithCancel(t.Context())
++		cancel()
++		start := time.Now()
++		require.Error(t, runBeforeJob(ctx, []string{"sleep", "60"}, &bytes.Buffer{}))
++		require.Less(t, time.Since(start), time.Second)
++	})
++}
+diff --git a/internal/app/run/runner.go b/internal/app/run/runner.go
+index 4327d615..fbb05695 100644
+--- a/internal/app/run/runner.go
++++ b/internal/app/run/runner.go
+@@ -252,6 +252,13 @@ func (r *Runner) run(ctx context.Context, task *runnerv1.Task, reporter *report.
+ 	job := workflow.GetJob(jobID)
+ 	reporter.ResetSteps(len(job.Steps))
+ 
++	if len(r.cfg.Runner.BeforeJob) > 0 {
++		reporter.Logf("Preparing job execution environment")
++		if err := runBeforeJob(ctx, r.cfg.Runner.BeforeJob, preparationLog{reporter}); err != nil {
++			return fmt.Errorf("prepare job execution environment: %w", err)
++		}
++	}
++
+ 	taskContext := task.Context.Fields
+ 
+ 	defaultActionURL := client.BackwardCompatibleContext(task, "default_actions_url")
+diff --git a/internal/pkg/config/before_job_test.go b/internal/pkg/config/before_job_test.go
+new file mode 100644
+index 00000000..49b67e41
+--- /dev/null
++++ b/internal/pkg/config/before_job_test.go
+@@ -0,0 +1,17 @@
++package config
++
++import (
++	"testing"
++
++	"github.com/stretchr/testify/require"
++)
++
++func TestBeforeJobConfiguration(t *testing.T) {
++	cfg := &Config{}
++	settings := serializedRunnerSettings{BeforeJob: []string{"/trusted/prepare", "argument"}}
++	require.NoError(t, settings.applyTo(cfg))
++	require.Equal(t, settings.BeforeJob, cfg.Runner.BeforeJob)
++	settings.BeforeJob[0] = "changed"
++	require.Equal(t, "/trusted/prepare", cfg.Runner.BeforeJob[0])
++	require.Error(t, (&serializedRunnerSettings{BeforeJob: []string{""}}).applyTo(cfg))
++}
+diff --git a/internal/pkg/config/config.go b/internal/pkg/config/config.go
+index 49cbca52..a0021716 100644
+--- a/internal/pkg/config/config.go
++++ b/internal/pkg/config/config.go
+@@ -30,6 +30,7 @@ type Log struct {
+ 
+ // Runner represents the configuration for the runner.
+ type Runner struct {
++	BeforeJob       []string          // Trusted command run after assignment, before the job accesses its execution environment.
+ 	File            string            // File specifies the file path for the runner.
+ 	Capacity        int               // Capacity specifies the capacity of the runner.
+ 	Envs            map[string]string // Envs stores environment variables for the runner.
+@@ -198,6 +199,7 @@ func (s *serializedLogSettings) applyTo(config *Config) error {
+ 
+ // serializedRunnerSettings defines the on-disk format for configuring the runner's behaviour.
+ type serializedRunnerSettings struct {
++	BeforeJob       []string                      `yaml:"before_job,omitempty"`
+ 	File            string                        `yaml:"file"`             // File specifies the path where `.runner` can be found.
+ 	Capacity        int                           `yaml:"capacity"`         // Capacity specifies the maximum number of jobs that the runner executes concurrently.
+ 	Envs            map[string]string             `yaml:"envs"`             // Envs stores environment variables for the runner.
+@@ -213,6 +215,10 @@ type serializedRunnerSettings struct {
+ }
+ 
+ func (s *serializedRunnerSettings) applyTo(config *Config) error {
++	if len(s.BeforeJob) > 0 && strings.TrimSpace(s.BeforeJob[0]) == "" {
++		return fmt.Errorf("runner.before_job requires an executable")
++	}
++	config.Runner.BeforeJob = append([]string(nil), s.BeforeJob...)
+ 	if s.File != "" {
+ 		config.Runner.File = s.File
+ 	}

@@ -30,7 +30,7 @@
 
 The custom Debian runtime builds the pinned upstream submodule with carried source-root containment patches. It includes Docker, QEMU system emulators and digest-pinned binfmt interpreters. The application license is upstream's GPL license.
 
-In virtualized mode, each slot runs a host-side `one-job --wait` process against Docker inside a disposable KVM guest. Concurrent slots share one persistent Forgejo identity, not a guest or Docker daemon. Each completed job destroys its guest disk, seed and transport keys before a replacement guest starts. No service Docker socket or parent filesystem is exported to a guest.
+In virtualized mode, each slot polls with a host-side `one-job --wait` process and no idle guest. A carried `runner.before_job` hook runs after assignment, with the job reporter active, and waits for memory admission and a fresh KVM guest before Docker access. Concurrent slots share one persistent Forgejo identity, not a guest or Docker daemon. Completion destroys the guest disk, seed and transport keys, then returns the memory lease. No replacement guest starts until another job is assigned. No service Docker socket or parent filesystem is exported to a guest.
 
 The first virtualized start downloads a checksum-pinned Debian cloud image and prepares a cached Docker guest. Preparation never receives Forgejo registration credentials. Prepared images are rebuilt when their pinned image or provisioning inputs change; jobs always use separate writable overlays.
 
@@ -39,6 +39,7 @@ In container mode, `container-engine` runs rootful Docker within the StartOS ser
 | Subcontainer | Purpose |
 | --- | --- |
 | `vm-image-preparation` | Download, verify and prepare the guest base |
+| `vm-memory-pool` | Admit guests and redistribute a single RAM budget |
 | `vm-worker-N` | Host-side controller and hypervisor for slot N, starting at zero |
 | `container-engine` | Docker engine when virtualization is off or unavailable |
 | `runner-controller` | One multi-job controller in container mode |
@@ -55,7 +56,8 @@ Persistent configuration and controller state are separate from reconstructible 
 | `scratch/vm-images` | `/cache` in preparation; read-only `/base` in workers | Verified cloud image and prepared base |
 | `scratch/vm-preparation/runtime` | `/vm` in preparation | Temporary preparation disk and seed |
 | `scratch/vm-preparation/control` | `/data` in preparation | Temporary TLS and provisioning state |
-| `scratch/vm-workers/N` | `/vm` in worker N | Disposable job disk, seed, serial log and hypervisor state |
+| `scratch/vm-workers/N` | `/vm` in worker N; read-only `/workers/N` in memory manager | Disposable disk, seed, serial log, QMP socket and lease identity |
+| `scratch/vm-pool` | `/pool` in manager and workers | Host-only control socket and recoverable memory reservations |
 | `scratch/container` | `/scratch` in container engine/controller | Persistent image layers, nested build scratch and transient sockets |
 
 VM jobs bind guest-local `/var/lib/runner-scratch` at `/root/setup-docker-action`, plus the guest resolver and Unix Docker socket. Container jobs use `/scratch/jobs` from the engine filesystem instead. These keep nested Docker storage off layered job roots. A workflow selecting a different nested-daemon directory needs an equivalent scratch arrangement.
@@ -84,9 +86,11 @@ Container mode uses bridge `runner` at `172.18.0.1/24`, with job networks from `
 
 Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. A missing or inaccessible device forces container mode; an actual VM startup failure does not.
 
-The hardware floor is two CPU cores and the four-gigabyte memory class. Virtualized slots divide half the service-visible RAM, with at least 512 MiB per guest. Their disk limits divide half the free scratch space observed at startup, capped at 32 GiB and requiring at least 8 GiB per guest. Host control and hypervisor overhead remain additional; other services compete for resources. Lower concurrency for large builds.
+The hardware floor is two CPU cores and the four-gigabyte memory class. Half the service-visible RAM, rounded down to 128 MiB blocks, forms one guest-memory pool. Configured concurrency must fit a 512 MiB boot floor per simultaneous guest. A lone active job may use the whole pool; new assignments divide fair targets among active and waiting jobs. Idle slots have no VM or guest-memory commitment.
 
-Guest RAM is demand-allocated, with virtio free-page reporting enabled. This can release free guest pages but is not container-style shared RAM or host-wide KSM.
+Guests boot with only the fixed floor and a zero-sized virtio-mem expansion. Cloud-init enables movable memory onlining before Docker readiness. The manager grants additional blocks through QMP and waits for actual device-size acknowledgement before admitting execution or reusing reclaimed memory. If the guest cannot release busy memory, another assigned job waits rather than overcommitting the pool. Reservations survive manager restart; active guests remain running during an isolated manager-process restart. The manager verifies each QEMU lease identity before changing its memory.
+
+Disk limits divide half the free scratch space observed at startup, capped at 32 GiB and requiring at least 8 GiB per guest. Host control, hypervisor and guest-kernel metadata overhead remain additional; this is not a total service RSS cap. Other services compete for resources. Free-page reporting can release unused physical pages within grants; there is no cross-guest RAM deduplication or host-wide KSM.
 
 ## Actions
 
@@ -102,9 +106,9 @@ When Forgejo Actions is disabled, the dependency receives a task targeting its C
 
 Container readiness checks the controller process and its engine. A separate informational check explains why container mode is selected. Engine failure prevents the controller from polling.
 
-Each VM slot checks its live hypervisor during boot, then its runner process and mutually authenticated guest Docker API. The startup grace period allows preparation and boot; serial logs in its scratch directory distinguish provisioning failure from a broken runner. A rejected registration produces the same credential-replacement diagnostic in either mode.
+An idle VM slot checks its supervisor and runner process and reports that no VM is allocated. Memory admission and boot report starting; active execution additionally checks its hypervisor and mutually authenticated guest Docker API. The memory manager has its own process/control-socket check. Serial logs distinguish guest provisioning failures. A rejected registration produces the same credential-replacement diagnostic in either mode.
 
-A guest exiting before its controller completes fails that slot. Its controller has up to three minutes to report the failed job before the entire controller process group is terminated and its state disposed. Replacement never starts a local container engine. Unexpected controller termination can leave Forgejo to time out its assigned task; jobs are not automatically replayed by the package.
+A guest or provisioning failure fails that slot. Its controller has up to three minutes to report the failed job before the entire controller process group is terminated. The VM is stopped before its memory reservation is released. The next polling process has no guest until another assignment; failure never starts a local container engine. Unexpected controller termination can leave Forgejo to time out its assigned task; jobs are not automatically replayed by the package.
 
 ## Backups and Restore
 
@@ -119,7 +123,7 @@ A restored service must still have Forgejo and a recognized persistent registrat
 3. VM job disks and image/build caches are discarded after each job. The runner-side action cache server is disabled in VM mode; do not depend on its service-side cache URLs or guest-published ports appearing on the parent loopback address.
 4. Persistent registrations are mandatory. Ephemeral registration deletion is incompatible with sharing one identity across slots.
 5. Initial guest preparation needs outbound access to the pinned cloud image, Debian repositories and helper image. Failed preparation does not change execution mode.
-6. Guest memory and disk are bounded, but CPU, networking and the StartOS host remain shared resources. Increasing concurrency can reduce memory available to each job.
+6. Guest memory grants and disks are bounded, but CPU, networking and the StartOS host remain shared resources. A job waiting for memory has already been assigned in Forgejo; its logs report provisioning while the shared pool waits for reclamation. Busy or pinned memory can delay another job until an active guest finishes.
 7. Foreign-architecture labels use slower user-mode emulation inside the selected execution environment; native workers are preferable for regular builds.
 
 ## Quick Reference for AI Consumers
@@ -128,7 +132,7 @@ A restored service must still have Forgejo and a recognized persistent registrat
 package_id: forgejo-runner
 image: ./Dockerfile
 architectures: [x86_64, aarch64]
-subcontainers: [vm-image-preparation, vm-worker-N, container-engine, runner-controller]
+subcontainers: [vm-image-preparation, vm-memory-pool, vm-worker-N, container-engine, runner-controller]
 volumes:
   main: /data
   scratch: /vm
@@ -149,6 +153,13 @@ startos_managed_env_vars:
   - DOCKER_CERT_PATH
   - VM_DOCKER_PORT
   - VM_MEMORY_MB
+  - VM_POOL_MEMORY_MB
+  - VM_BOOT_MEMORY_MB
+  - VM_MEMORY_BLOCK_MB
+  - VM_MEMORY_DEVICE_ID
+  - VM_SLOT
+  - VM_LEASE
+  - RUNNER_BEFORE_JOB
   - VM_CPU_CORES
   - VM_DISK_GB
 dependencies: [forgejo]
@@ -157,5 +168,5 @@ actions: [configure]
 tasks:
   - { action: configure, severity: critical }
   - { package: forgejo, action: configure, severity: critical }
-health_checks: [worker-N, runner, execution-mode]
+health_checks: [memory-pool, worker-N, runner, execution-mode]
 ```

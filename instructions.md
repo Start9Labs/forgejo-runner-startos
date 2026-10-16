@@ -8,7 +8,7 @@
 
 You use one runner registration with the **Forgejo on this device**. Follow jobs and logs in Forgejo's **Actions** tab and check execution health here.
 
-With **Virtualization** enabled, each job gets a fresh disposable VM, including jobs running at the same time. Turning it off uses containers that share the StartOS kernel.
+With **Virtualization** enabled, each assigned job boots a fresh disposable VM, including jobs running at the same time. Idle slots keep no VM running. Turning virtualization off uses containers that share the StartOS kernel.
 
 ## Getting set up
 
@@ -29,11 +29,11 @@ runs-on: ubuntu-latest
 
 ## Choosing execution mode
 
-**Virtualization** adds a guest-kernel boundary and discards each job's VM afterward. It has more startup and memory overhead. VM startup or runtime failures are reported; they never silently switch to containers.
+**Virtualization** adds a guest-kernel boundary and discards each job's VM afterward. Jobs wait for their VM to boot; idle slots use only the host-side controller. Active guests share one memory budget: a lone job can borrow more RAM, and memory is redistributed when another job arrives or finishes. VM startup or runtime failures are reported; they never silently switch to containers.
 
 **Container mode** starts faster and uses less memory, but jobs run privileged containers with access to their engine and share the StartOS kernel. Use it only for trusted workflows.
 
-Saving **Configure** interrupts active jobs and restarts execution. Keep concurrency low for large builds: concurrent VMs divide the available guest-memory and disk budgets. If resources are insufficient, reduce concurrency, free space, or choose container mode deliberately.
+Saving **Configure** interrupts active jobs and restarts execution. **Concurrent Jobs** is a maximum, not a promise that every assigned job starts immediately. If active guests cannot release memory yet, an assigned job waits and reports provisioning in its logs. Keep concurrency low for large builds; reduce concurrency or free disk space if configuration reports insufficient resources.
 
 ## Images and emulation
 

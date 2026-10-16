@@ -10,7 +10,7 @@
   4. Update `startos/versions/current.ts` and release notes as the packaging guide specifies.
   5. Run the action-source boundary tests and Docker backend tests, then exercise an ordinary remote action and a Docker action against the packaged runner. Verify both package architectures.
 
-The Docker build runs focused action tests and Docker backend tests. The broader upstream runner suite includes a test requiring a live Docker daemon; a daemon-free builder cannot establish that suite passed.
+The Docker build runs focused action tests, Docker backend tests and the assigned-job preparation-hook tests. Preserve the hook's cancellation/failure reporting and deferred Docker validation: opening a Docker endpoint before assignment would require idle guests again. The broader upstream runner suite includes a test requiring a live Docker daemon; a daemon-free builder cannot establish that suite passed.
 
 ## Guest image and firmware
 
@@ -18,7 +18,9 @@ The Docker build runs focused action tests and Docker backend tests. The broader
 
 The prepared cache fingerprint includes the image metadata, host architecture, cloud-init template and preparation/VM helpers. Provisioning changes rebuild the cache at the next virtualized start. To refresh guest packages without changing the cloud release, make the preparation input change explicit rather than mutating a cached disk by hand.
 
-Verify a first preparation, a cache-hit restart, distinct consecutive guest boots, and a job that uses a foreign-architecture image. An ARM64 firmware boot under TCG validates image/firmware wiring, not native ARM64 KVM execution; report that distinction when native hardware is unavailable. The production launcher always requests KVM and never falls back to TCG.
+The guest kernel must support virtio-mem and movable memory hotplug. Verify actual QMP device-size acknowledgement for both growth and shrink, not just a successful requested-size command. Initial expansion stays zero until cloud-init enables movable onlining and Docker is ready. Never grant reclaimed memory to a second guest before shrink acknowledgement.
+
+Verify a first preparation, a cache-hit restart, zero idle guests, distinct consecutive guest boots, a lone job borrowing the pool, concurrent redistribution, and a job that uses a foreign-architecture image. An ARM64 firmware boot under TCG validates image/firmware wiring, not native ARM64 KVM execution; report that distinction when native hardware is unavailable. The production launcher always requests KVM and never falls back to TCG.
 
 ## User-mode QEMU
 

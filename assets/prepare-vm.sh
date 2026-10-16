@@ -2,6 +2,7 @@
 set -euo pipefail
 umask 077
 source /usr/local/libexec/runner-vm.sh
+VM_MEMORY_ARGS=(-m "${VM_MEMORY_MB:?}")
 trap vm_dispose EXIT
 trap 'exit 143' TERM INT
 mkdir -p /cache /vm /data

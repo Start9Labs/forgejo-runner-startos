@@ -6,7 +6,8 @@ COPY patches/ /patches/
 RUN for file in /patches/*.patch; do git apply "$file"; done
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go test -short -run '^Test(Action|RemoteAction|StepActionLocal|StepActionRemote)' ./act/runner \
- && CGO_ENABLED=0 go test -short ./act/container/docker
+ && CGO_ENABLED=0 go test -short ./act/container/docker \
+ && CGO_ENABLED=0 go test -short -run '^TestBeforeJob' ./internal/app/run ./internal/app/cmd ./internal/pkg/config
 ARG TARGETOS
 ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
@@ -21,7 +22,7 @@ RUN mkdir -p /usr/local/share && printf '%s\n' "$BINFMT_IMAGE" > /usr/local/shar
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      curl ca-certificates fuse-overlayfs iproute2 iptables jq git \
+      curl ca-certificates fuse-overlayfs iproute2 iptables jq git python3 \
       qemu-system-x86 qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://download.docker.com/linux/debian/gpg \
@@ -47,9 +48,11 @@ COPY assets/vm.sh /usr/local/libexec/runner-vm.sh
 COPY assets/docker-client.sh /usr/local/libexec/runner-docker-client.sh
 COPY assets/prepare-vm.sh /usr/local/bin/prepare-vm.sh
 COPY assets/vm-worker.sh /usr/local/bin/vm-worker.sh
+COPY assets/request-vm.sh /usr/local/bin/request-vm.sh
+COPY assets/vm-pool.py /usr/local/bin/vm-pool.py
 COPY assets/guest-images.json /usr/local/share/runner-guest-images.json
 COPY assets/guest-cloud-init.yaml /usr/local/share/runner-guest-cloud-init.yaml
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/runc-nested /usr/local/bin/engine.sh /usr/local/bin/prepare-vm.sh /usr/local/bin/vm-worker.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/runc-nested /usr/local/bin/engine.sh /usr/local/bin/prepare-vm.sh /usr/local/bin/vm-worker.sh /usr/local/bin/request-vm.sh
 
 USER app
 WORKDIR /home/app

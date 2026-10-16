@@ -1,5 +1,4 @@
 #!/bin/bash
-: "${VM_MEMORY_MB:?}"
 : "${VM_CPU_CORES:?}"
 VM_DOCKER_PORT=${VM_DOCKER_PORT:-23750}
 VM_QEMU_PID=
@@ -56,8 +55,8 @@ vm_boot() {
       machine=(qemu-system-aarch64 -machine virt,gic-version=host -drive if=pflash,format=raw,file=/usr/share/AAVMF/AAVMF_CODE.fd,readonly=on -drive if=pflash,format=raw,file=/vm/vars.fd)
       ;;
   esac
-  "${machine[@]}" -accel kvm -cpu host -smp "$VM_CPU_CORES" -m "$VM_MEMORY_MB" \
-    -device virtio-balloon-pci,free-page-reporting=on,deflate-on-oom=on \
+  "${machine[@]}" -accel kvm -cpu host -smp "$VM_CPU_CORES" "${VM_MEMORY_ARGS[@]}" -name "${VM_LEASE:-image-preparation}" \
+    -device virtio-balloon-pci,free-page-reporting=on \
     -drive file=/vm/root.qcow2,format=qcow2,if=virtio,cache=none,werror=report \
     -drive file=/vm/seed.iso,format=raw,media=cdrom,readonly=on \
     -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$VM_DOCKER_PORT-:2376" \

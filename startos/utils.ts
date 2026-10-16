@@ -91,8 +91,11 @@ export async function vmDiskSize(
 }
 
 export function vmResources(capacity: number) {
-  const memoryMiB = Math.floor((totalmem() * 0.5) / 1024 ** 2 / capacity)
-  if (memoryMiB < 512) {
+  const bootMemoryMiB = 512
+  const blockMemoryMiB = 128
+  const memoryMiB =
+    Math.floor((totalmem() * 0.5) / 1024 ** 2 / blockMemoryMiB) * blockMemoryMiB
+  if (memoryMiB < capacity * bootMemoryMiB) {
     throw new Error(
       i18n(
         'Too many concurrent jobs: each VM needs at least 512 MiB of guest RAM.',
@@ -102,6 +105,9 @@ export function vmResources(capacity: number) {
   return {
     cpuCores: Math.max(1, Math.floor(cpus().length / capacity)),
     memoryMiB,
+    bootMemoryMiB,
+    blockMemoryMiB,
+    memoryDeviceId: 'job-memory',
   }
 }
 
@@ -164,7 +170,7 @@ export function runnerInput() {
     capacity: Value.number({
       name: i18n('Concurrent Jobs'),
       description: i18n(
-        'Maximum concurrent jobs. Virtualized jobs each get a separate VM; increasing concurrency divides the guest-memory budget.',
+        'Maximum concurrent jobs. VMs boot only after assignment and share one guest-memory pool; a job may wait for memory.',
       ),
       required: true,
       default: 1,

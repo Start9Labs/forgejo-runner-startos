@@ -37,6 +37,10 @@ sed -i \
   -e "s/^  privileged: false$/  privileged: ${RUNNER_PRIVILEGED}/" \
   -e 's/^  env_file: .*/  env_file: ""/' \
   "$CONFIG"
+if [ -n "${RUNNER_BEFORE_JOB:-}" ]; then
+  command=$(jq -nc --arg executable "$RUNNER_BEFORE_JOB" '[$executable]')
+  sed -i "/^runner:$/a\\  before_job: $command" "$CONFIG"
+fi
 if [ "$RUNNER_PRIVILEGED" = true ]; then
   RESOLV_CONF=/etc/resolv.conf
   SOCKET_OPTION=

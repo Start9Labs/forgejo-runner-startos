@@ -226,19 +226,74 @@ export const main = sdk.setupMain(async ({ effects }) => {
       }),
     'vm-image-preparation',
   )
-  let daemons = sdk.Daemons.of(effects).addOneshot('prepare-vm', {
-    subcontainer: preparer,
-    exec: {
-      command: ['bash', '/usr/local/bin/prepare-vm.sh'],
-      user: 'root',
-      env: {
-        VM_DOCKER_PORT: '23650',
-        VM_MEMORY_MB: String(preparationResources.memoryMiB),
-        VM_CPU_CORES: String(preparationResources.cpuCores),
+  const memoryEnv = {
+    VM_POOL_MEMORY_MB: String(resources.memoryMiB),
+    VM_BOOT_MEMORY_MB: String(resources.bootMemoryMiB),
+    VM_MEMORY_BLOCK_MB: String(resources.blockMemoryMiB),
+    VM_MEMORY_DEVICE_ID: resources.memoryDeviceId,
+    VM_CAPACITY: String(store.capacity),
+  }
+  const memoryPool = sdk.SubContainer.of(
+    effects,
+    { imageId: 'main' },
+    sdk.Mounts.of()
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-pool',
+        mountpoint: '/pool',
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-workers',
+        mountpoint: '/workers',
+        readonly: true,
+      }),
+    'vm-memory-pool',
+  )
+  let daemons = sdk.Daemons.of(effects)
+    .addOneshot('prepare-vm', {
+      subcontainer: preparer,
+      exec: {
+        command: ['bash', '/usr/local/bin/prepare-vm.sh'],
+        user: 'root',
+        env: {
+          VM_DOCKER_PORT: '23650',
+          VM_MEMORY_MB: String(preparationResources.memoryMiB),
+          VM_CPU_CORES: String(preparationResources.cpuCores),
+        },
       },
-    },
-    requires: [],
-  })
+      requires: [],
+    })
+    .addDaemon('memory-pool', {
+      subcontainer: memoryPool,
+      exec: {
+        command: ['python3', '-B', '/usr/local/bin/vm-pool.py', 'serve'],
+        user: 'root',
+        env: memoryEnv,
+      },
+      ready: {
+        display: i18n('Guest Memory Pool'),
+        fn: async () => {
+          const status = await memoryPool.exec(
+            [
+              'sh',
+              '-ec',
+              'pid=$(cat /pool/manager.pid); kill -0 "$pid"; grep -qF /usr/local/bin/vm-pool.py /proc/$pid/cmdline; python3 -B /usr/local/bin/vm-pool.py status',
+            ],
+            { user: 'root', timeout: 10000 },
+          )
+          return {
+            result: status.exitCode === 0 ? 'success' : 'failure',
+            message:
+              status.exitCode === 0
+                ? i18n('Shared guest-memory controller is running')
+                : i18n('Guest-memory controller is not running'),
+          }
+        },
+      },
+      requires: ['prepare-vm'],
+    })
   for (let slot = 0; slot < store.capacity; slot++) {
     const port = 23750 + slot
     const controllerPath = `./controller/workers/${slot}`
@@ -246,6 +301,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
       effects,
       { imageId: 'main' },
       sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-pool',
+          mountpoint: '/pool',
+          readonly: false,
+        })
         .mountVolume({
           volumeId: 'scratch',
           subpath: './vm-images',
@@ -274,12 +335,14 @@ export const main = sdk.setupMain(async ({ effects }) => {
         user: 'root',
         env: {
           ...env,
+          ...memoryEnv,
+          VM_SLOT: String(slot),
+          RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
           RUNNER_CAPACITY: '1',
           RUNNER_EMULATION: String(store.emulation),
           RUNNER_SCRATCH_DIR: '/var/lib/runner-scratch',
           VM_DOCKER_PORT: String(port),
           VM_DISK_GB: String(diskGiB),
-          VM_MEMORY_MB: String(resources.memoryMiB),
           VM_CPU_CORES: String(resources.cpuCores),
         },
       },
@@ -300,7 +363,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
             [
               'sh',
               '-ec',
-              `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in booting|recycling) echo starting;; *) kill -0 "$(cat /vm/qemu.pid)"; if grep -qx forgejo-runner /proc/[0-9]*/comm; then curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready; else echo starting; fi;; esac`,
+              `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in idle) if grep -qx forgejo-runner /proc/[0-9]*/comm; then echo idle; else echo starting; fi;; budget|booting|recycling) echo starting;; ready) kill -0 "$(cat /vm/qemu.pid)"; grep -qx forgejo-runner /proc/[0-9]*/comm; curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready;; *) exit 1;; esac`,
             ],
             { user: 'root', timeout: 5000 },
           )
@@ -308,14 +371,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
             result:
               status.exitCode !== 0
                 ? 'failure'
-                : String(status.stdout).trim() === 'ready'
-                  ? 'success'
-                  : 'starting',
+                : String(status.stdout).trim() === 'starting'
+                  ? 'starting'
+                  : 'success',
             message:
               status.exitCode === 0
-                ? String(status.stdout).trim() === 'starting'
-                  ? i18n('Preparing a disposable VM')
-                  : i18n('Guest Docker is responding')
+                ? String(status.stdout).trim() === 'idle'
+                  ? i18n('Waiting for a job; no VM allocated')
+                  : String(status.stdout).trim() === 'starting'
+                    ? i18n('Preparing a disposable VM')
+                    : i18n('Guest Docker is responding')
                 : i18n('Virtualized job slot is not running'),
           }
         },

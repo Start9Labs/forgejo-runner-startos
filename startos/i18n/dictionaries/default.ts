@@ -13,7 +13,7 @@ const dict = {
   Labels: 9,
   'Comma-separated Docker runner labels. Use Enable Emulation for foreign-architecture labels.': 10,
   'Concurrent Jobs': 11,
-  'Maximum concurrent jobs. Virtualized jobs each get a separate VM; increasing concurrency divides the guest-memory budget.': 12,
+  'Maximum concurrent jobs. VMs boot only after assignment and share one guest-memory pool; a job may wait for memory.': 12,
   'Enable Emulation': 13,
   'Also serve jobs for the other CPU architecture, run under emulation (much slower than native). Appends a foreign-architecture label pinned to that platform; prefer a native runner per architecture for regular builds.': 14,
   Configure: 15,
@@ -40,6 +40,10 @@ const dict = {
   'Virtualization is disabled. Jobs use privileged containers within the service and share the StartOS kernel. Only run trusted workflows.': 47,
   'KVM is unavailable. Jobs use containers and share the StartOS kernel.': 48,
   'Insufficient scratch space: each VM needs at least 8 GiB of disk space within the guest-disk budget.': 49,
+  'Guest Memory Pool': 50,
+  'Shared guest-memory controller is running': 51,
+  'Waiting for a job; no VM allocated': 52,
+  'Guest-memory controller is not running': 53,
 }
 
 export type I18nKey = keyof typeof dict
