@@ -1,53 +1,7 @@
 import { i18n } from '../i18n'
 import { sdk } from '../sdk'
 import { storeJson } from '../fileModels/store.json'
-
-const { InputSpec, Value } = sdk
-
-const inputSpec = InputSpec.of({
-  runnerUuid: Value.text({
-    name: i18n('Runner UUID'),
-    description: i18n(
-      'The runner UUID shown by Forgejo when you create a runner, under Site/Org/Repo Settings → Actions → Runners → Create new Runner.',
-    ),
-    required: true,
-    default: null,
-  }),
-  runnerToken: Value.text({
-    name: i18n('Runner Token'),
-    description: i18n(
-      'The runner token shown alongside the UUID on the same Forgejo "Create new Runner" screen.',
-    ),
-    required: true,
-    default: null,
-    masked: true,
-  }),
-  labels: Value.text({
-    name: i18n('Labels'),
-    description: i18n(
-      'Comma-separated runner labels — syntax "name:docker://image" or "name:host". For foreign-architecture jobs use the Enable Emulation toggle instead of adding arch labels by hand.',
-    ),
-    required: false,
-    default: 'ubuntu-latest:docker://ghcr.io/catthehacker/ubuntu:act-22.04',
-  }),
-  capacity: Value.number({
-    name: i18n('Concurrent Jobs'),
-    description: i18n(
-      "How many jobs run at the same time. Each job is a full build in its own container, and all of them share this device's CPU and memory.",
-    ),
-    required: true,
-    default: 1,
-    min: 1,
-    integer: true,
-  }),
-  emulation: Value.toggle({
-    name: i18n('Enable Emulation'),
-    description: i18n(
-      'Also serve jobs for the other CPU architecture, run under emulation (much slower than native). Appends a foreign-architecture label pinned to that platform; prefer a native runner per architecture for regular builds.',
-    ),
-    default: false,
-  }),
-})
+import { DEFAULT_RUNNER_LABELS, runnerInput, validateRunners } from '../utils'
 
 export const configure = sdk.Action.withInput(
   'configure',
@@ -55,7 +9,7 @@ export const configure = sdk.Action.withInput(
   async ({ effects }) => ({
     name: i18n('Configure'),
     description: i18n(
-      'Connect this runner to the Forgejo on this device. Saving a change restarts the runner if it is running.',
+      'Configure the unprivileged runner. Saving restarts both runners.',
     ),
     warning: null,
     allowedStatuses: 'any',
@@ -63,28 +17,25 @@ export const configure = sdk.Action.withInput(
     visibility: 'enabled',
   }),
 
-  inputSpec,
+  sdk.InputSpec.of(runnerInput(DEFAULT_RUNNER_LABELS, true)),
 
   async ({ effects }) => {
-    const s = await storeJson.read().once()
-    if (!s) return null
+    const store = await storeJson.read().once()
+    if (!store) return null
     return {
-      runnerUuid: s.runnerUuid || undefined,
-      runnerToken: s.runnerToken || undefined,
-      labels: s.labels,
-      capacity: s.capacity,
-      emulation: s.emulation,
+      runnerUuid: store.runnerUuid || undefined,
+      runnerToken: store.runnerToken || undefined,
+      labels: store.labels,
+      capacity: store.capacity,
+      emulation: store.emulation,
     }
   },
 
   async ({ effects, input }) => {
-    await storeJson.merge(effects, {
-      runnerUuid: input.runnerUuid,
-      runnerToken: input.runnerToken,
-      labels: input.labels ?? '',
-      capacity: input.capacity,
-      emulation: input.emulation,
-    })
+    const store = await storeJson.read().once()
+    if (!store) throw new Error(i18n('Store not found'))
+    validateRunners({ ...store, ...input })
+    await storeJson.merge(effects, input)
 
     return {
       version: '1',

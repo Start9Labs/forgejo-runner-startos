@@ -9,12 +9,7 @@
 > upstream documentation is accurate and fully applicable — see the
 > Documentation section of `instructions.md` for links.
 
-[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes Forgejo Actions workflows. This package runs it against the Forgejo on this same device, with a Docker engine inside the service so each job gets its own container.
-
-- **Upstream repo:** <https://code.forgejo.org/forgejo/runner>
-- **Wrapper repo:** <https://github.com/Start9Labs/forgejo-runner-startos>
-
----
+[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes workflows for the Forgejo on this device. This package supplies an unprivileged runner and an optional privileged build runner in one StartOS service.
 
 ## Table of Contents
 
@@ -31,168 +26,137 @@
 - [Limitations and Differences](#limitations-and-differences)
 - [Quick Reference for AI Consumers](#quick-reference-for-ai-consumers)
 
----
-
 ## Image and Container Runtime
 
-The image is built here: upstream's runner binary is copied onto a Debian base carrying Docker CE, fuse-overlayfs, jq, and git. A digest-pinned `tonistiigi/binfmt` stage supplies the registration helper and static QEMU interpreters.
+A custom Debian image combines the upstream runner, Docker CE, fuse-overlayfs, git, and digest-pinned static QEMU interpreters. It runs natively on x86_64 and aarch64.
 
-| Property      | Value                                                                    |
-| ------------- | ------------------------------------------------------------------------ |
-| Image         | Built from `Dockerfile` — upstream's `forgejo-runner` binary plus Docker CE |
-| Architectures | x86_64, aarch64                                                          |
-| Command       | The repo's `entrypoint.sh`, run as the unprivileged `app` user           |
-| Subcontainer  | `forgejo-runner-sub` — the `primary` daemon, and the one to `attach` to  |
+| Subcontainer | Purpose |
+| --- | --- |
+| `forgejo-runner-sub` | Default runner and its Docker engine |
+| `forgejo-build-runner-sub` | Optional build runner and its separate Docker engine |
 
-The `engine` daemon runs Docker as root **inside the StartOS service's user namespace**, not as host root. The runner remains the unprivileged `app` user and connects through a group-accessible Unix socket. Job IDs use the service's full 0–65535 mapping, including apt's `nogroup` (65534), without another subordinate-ID namespace.
+Each engine runs as root inside the service user namespace; its runner process runs as `app`. Docker uses fuse-overlayfs and the `runc-nested` wrapper, which removes the sysctl that cannot reliably be reopened across the StartOS namespace boundary. The engine entrypoint retains a private binfmt mount for QEMU registration. Both runners share the service's user and network namespaces; separate SDK subcontainers do not create separate service LXCs.
 
-The manifest grants **userspace filesystems** for Docker's fuse-overlayfs storage driver. `assets/daemon.json` selects that driver and the `runc-nested` runtime. The runtime wrapper removes `net.ipv4.ip_unprivileged_port_start` from OCI specs before invoking runc; reopening that sysctl across the StartOS namespace boundary can fail.
+The default job policy disables privileged mode, engine-socket mounting, and host-volume access. The build policy enables privileged jobs and exposes only its own engine socket and build scratch. Neither policy accepts host-backend labels. Configuration also rejects reused registration UUIDs and duplicate or overlapping advertised label names, including emulation labels. Label-name comparisons ignore case.
 
-The generated runner configuration enables privileged job containers and mounts the engine socket at `/var/run/docker.sock`. Workflows can therefore control the service's Docker engine, including other jobs and volumes. **Only run trusted workflows.** StartOS's outer user-namespace and AppArmor confinement still apply.
-
-`own-data` prepares the working and scratch directories without recursively changing file ownership. `clean-runtime` recreates the socket/PID directory before `engine` starts; `primary` waits for Docker to answer `info`. Image storage is separate and survives service restarts. The engine entrypoint registers QEMU on a private `binfmt_misc` mount and keeps it mounted for the daemon's lifetime. Registrations belong to the service's user namespace, not the StartOS host.
+Each engine has a distinct bridge and address pool. Both engines must be ready before either runner starts polling, preventing a second engine's initialization from interrupting an already-dispatched job. Saving either configuration restarts the entire daemon chain.
 
 ## Volume and Data Layout
 
-| Volume | Mount Point | Purpose |
-| ------ | ----------- | ------- |
-| `main` | `/data` | `store.json` and runner registration/configuration under `runner/` |
-| `scratch` | `/scratch` | Docker image storage under `docker/` and nested build-daemon working directories under `jobs/`; excluded from backups |
+The control-plane store stays outside both engine mounts. Each subcontainer sees only its own state and cache subtree.
 
-Every job bind-mounts `/scratch/jobs` at `/root/setup-docker-action`, the default runtime base directory of `docker/setup-docker-action`. Its per-invocation directories live on the volume rather than the job's layered root filesystem, allowing the inner Docker daemon to mount its own image layers. Workflows using a different runtime base directory must arrange an equivalent scratch mount. Jobs also receive a read-only bind of the service's `/etc/resolv.conf`; nested Docker daemons must inherit real StartOS DNS servers rather than the outer Docker network's loopback resolver. The action cleans up its runtime data; stopped or interrupted jobs can leave disposable directories behind.
+| Volume path | Visible inside its tier's subcontainer | Purpose |
+| --- | --- | --- |
+| `main/store.json` | Not mounted into either engine | Authoritative settings for both registrations |
+| `main/unprivileged/` | `/data` in the default subcontainer | Generated configuration, logs, and rejection marker |
+| `main/build/` | `/data` in the build subcontainer | Separate generated configuration, logs, and rejection marker |
+| `scratch/unprivileged/` | `/scratch` in the default subcontainer | Default engine image/layer storage |
+| `scratch/build/` | `/scratch` in the build subcontainer | Build engine image/layer storage and nested build scratch |
+
+Within either tier, `/data/runner/run` contains transient sockets and PID files and is recreated at startup. Only `/data/runner` is chowned; layer ownership is never recursively rewritten.
+
+Build jobs bind `/scratch/jobs` at `/root/setup-docker-action`, keeping a nested daemon's storage off the job's layered root filesystem. They also receive the engine's resolver file read-only so nested Docker can inherit StartOS DNS rather than falling back from an embedded loopback resolver. Default jobs receive neither bind mount. A workflow selecting another nested-daemon runtime directory needs an equivalent build-scratch arrangement. Interrupted jobs can leave disposable scratch data.
 
 ## File Models
 
-Two models: the runner's registration and job configuration, and a marker the entrypoint leaves when Forgejo rejects those credentials.
+The package owns a JSON settings file and a rejection marker per tier. Defaults are repaired during initialization without stripping unmodeled keys.
 
-| File                   | Format | Modelled                  | Written by                                         |
-| ---------------------- | ------ | ------------------------- | -------------------------------------------------- |
-| `store.json`           | JSON   | Yes — `FileHelper.json`   | Every init, and the Configure action               |
-| `runner/rejected-uuid` | Text   | Yes — `FileHelper.string` | `entrypoint.sh`, when Forgejo rejects `runnerUuid` |
+`store.json` retains the default runner's top-level `runnerUuid`, `runnerToken`, `labels`, `capacity`, and `emulation`. `buildRunner` contains the same fields plus `enabled`, which defaults to false. Only configuration actions write these settings.
 
-| Key                         | Notes                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------- |
-| `runnerUuid`, `runnerToken` | The credentials Forgejo shows when you create a runner. Both present is what counts as configured |
-| `labels`                    | Comma-separated, in the runner's own `name:docker://image` or `name:host` syntax                  |
-| `capacity`                  | How many jobs run at once                                                                         |
-| `emulation`                 | Whether to also advertise the other CPU architecture                                              |
+The entrypoint regenerates `/data/runner/config.yaml` in each subcontainer on every start. It is useful for diagnosis but hand edits do not survive a restart. Connection addresses and immutable privilege policy come from the package, not from editable upstream configuration.
 
-Nothing but the package writes `store.json`. The entrypoint generates `/data/runner/config.yaml` from the environment on each start; inspect it for diagnosis, but do not edit it. The connection to Forgejo is resolved rather than stored.
-
-The one value the package composes rather than passes through is the label list. With emulation enabled it appends a foreign-architecture label pinned to that platform, so jobs targeting the other architecture use the engine's namespace-local QEMU interpreters. The runner process itself always runs natively.
+`unprivileged/runner/rejected-uuid` and `build/runner/rejected-uuid` record a registration rejected by Forgejo. They are independent: rejection in one tier does not mark the other's credentials invalid.
 
 ## Dependencies
 
-One, and it is required in the strong sense.
+Forgejo is required, running, healthy on its primary check, and has Actions enabled. Neither runner mounts Forgejo's data.
 
-| Dependency | Kind      | Health check | Mounts | Why                                            |
-| ---------- | --------- | ------------ | ------ | ---------------------------------------------- |
-| Forgejo    | `running` | `primary`    | none   | The forge this runner registers with and polls |
-
-The health check is required as well as "running", because the runner talks to Forgejo's HTTP API — a Forgejo that is up but not yet serving is no use to it.
-
-Forgejo Actions must also be enabled. The package raises a critical task on Forgejo's **Configure** action whenever Enable Actions is off, which holds Forgejo stopped until it is turned back on.
-
-**This runner only ever serves the Forgejo on this device.** The address is resolved from Forgejo's own binding over the service bridge; there is no field for a remote forge. If Forgejo is not reachable, `main` refuses to start with a message saying so rather than starting a runner that cannot register.
+Both connect through Forgejo's resolved service-bridge address; remote Forgejo instances are not configurable. The package raises a dependency task when Actions is disabled.
 
 ## Network Access and Interfaces
 
-None. The runner dials out to its forge and pulls job images; it accepts no inbound connections and exports nothing.
+There are no user-facing interfaces. Both runners dial Forgejo and fetch images/actions outbound; their engine APIs are Unix sockets, not TCP listeners.
+
+The default engine uses bridge `runner-default` at `172.18.0.1/24` with job networks from `172.20.0.0/16`. The build engine uses `runner-build` at `172.19.0.1/24` with job networks from `172.21.0.0/16`. These share the outer service network namespace and must not overlap networks the workflows need to reach.
 
 ## Installation and First-Run Flow
 
-Install seeds the store with defaults. On every init, a watcher raises a critical **Configure** task if either the runner UUID or token is missing, blocking startup until both are saved. Already-configured installs and restores do not receive a setup task.
+Initialization seeds the default runner settings and leaves the build runner disabled. A critical configuration task blocks startup until the default registration is present.
 
-Two gates apply before that, both enforced rather than advisory:
-
-1. **Hardware.** `main` refuses to start on a device below 2 CPU cores or roughly a 4 GB machine's worth of memory, because every job is a full build. The message says so explicitly rather than failing obscurely later.
-2. **Forgejo.** It must be installed and serving.
-
-Complete the **Configure** task with the UUID and token Forgejo shows under **Settings → Actions → Runners → Create new Runner**, then start the service.
+The hardware gate requires at least two CPU cores and a machine in the four-gigabyte memory class. Enabling the build runner adds a second engine and shares the same CPU and memory budget; it does not allocate another VM or service container.
 
 ## Actions
 
-One action.
+The two configuration actions update independent sections of `store.json`, but either change restarts both runners and can interrupt active jobs. Saving the same settings is safe to repeat.
 
-### Configure
+**Configure** changes the default registration and its labels, concurrency, and emulation. **Configure Build Runner** changes the optional registration, its enabled state, and its job settings. Disabling it stops its runner and engine without deleting their retained state or credentials. Credentials can be left blank while it is disabled; enabling it requires both.
 
-Connects the runner to Forgejo and sets how it advertises itself.
-
-- **What it changes:** every field in `store.json` — the credentials, labels, concurrency, and the emulation toggle.
-- **Cost:** `main` reads the whole store reactively, so **saving a change restarts the runner if it is running.** A stopped service picks the values up when it next starts.
-- **Repeat safety:** idempotent; the form is pre-filled with the current values and replaces them wholesale.
-- **Input notes:** labels use the runner's own syntax. Do not add architecture labels by hand for foreign-architecture jobs — the emulation toggle exists to append the correct pinned label, and a hand-written one will not carry the platform pin.
+Validation rejects host labels, duplicate registration UUIDs, and label collisions. These checks prevent accidental routing ambiguity; Forgejo registration scope remains the authority for which repositories may dispatch privileged work. The package cannot turn a pasted site-wide registration into a repository-scoped one.
 
 ## Tasks
 
-One setup task of its own and one on its dependency:
+Configuration tasks are critical and therefore gate the whole service, not just one runner. Disabling the build runner leaves the default runner's setup requirement in place.
 
-| Task      | On             | Severity   | Raised when                     | Cleared when                     |
-| --------- | -------------- | ---------- | ------------------------------- | -------------------------------- |
-| Configure | Forgejo Runner | `critical` | Runner UUID or token is missing | Configure saves both credentials |
-| Configure | Forgejo        | `critical` | Forgejo's Enable Actions is off | Enable Actions is turned on      |
+- **Configure:** raised when the default credentials are missing or its labels are invalid. Correcting that configuration clears it.
+- **Configure Build Runner:** raised when an enabled build runner has incomplete or conflicting configuration. Correcting it or disabling the build runner clears it.
+- **Forgejo Configure:** raised on the dependency while Actions is disabled, and cleared by enabling Actions there.
 
 ## Health Checks
 
-A hidden Docker readiness check gates `primary`, which exposes the Runner check.
+Each enabled runner has its own process/engine check, with a sixty-second grace period and thirty-second checks. Hidden engine readiness checks gate startup first.
 
-| Check              | Method                                                                                          | Grace Period |
-| ------------------ | ----------------------------------------------------------------------------------------------- | ------------ |
-| `primary` "Runner" | Credentials not rejected by Forgejo, then the runner process alive and the Docker API answering | 60 seconds   |
+`primary` reports the default runner; `build-runner` reports the optional build runner. A successful check requires a live runner process and a responding engine in that tier's subcontainer. Inspect the named subcontainer when either fails rather than assuming the other engine is involved.
 
-Missing credentials are handled by the setup task, not readiness. The check fails while `runner/rejected-uuid` holds the configured UUID: the entrypoint writes it when Forgejo answers `unregistered runner` (its database no longer holds that runner, as after Forgejo is reinstalled), then idles instead of exiting, so the service waits for new credentials rather than restarting in a loop. Saving a different UUID clears it on the next start. With valid credentials it runs a script in the service container every 30 seconds: a `forgejo-runner` process must appear in `/proc`, and `docker info` must succeed against the API socket the runner drives. Both have to hold — the runner exits when the engine is unreachable, and an engine with no runner behind it serves nothing. Whether Forgejo is currently handing it jobs is visible in Forgejo, not here.
+A matching rejection marker means Forgejo has forgotten that registration. The entrypoint records the UUID and waits instead of crash-looping. Saving a different UUID lets that tier reconnect; use its corresponding configuration action. Disabled build runners have no running daemon or health check.
 
 ## Backups and Restore
 
-The `main` volume is copied wholesale — `sdk.Backups.ofVolumes('main')`. The `scratch` volume is excluded; engine images and build scratch are disposable.
+Backups copy `main` wholesale, including the central settings and both tiers' state. The entire `scratch` volume is excluded because images and build intermediates can be reconstructed.
 
-- **Included:** the runner's credentials, configuration, and rejection marker.
-- **Restore:** the runner comes back configured against the same UUID and token. Whether Forgejo still recognises them depends on Forgejo's own state, which is that package's backup rather than this one's — if the forge was rebuilt, register the runner again.
+A restore reconnects both configured registrations if Forgejo still recognizes them. Engine caches are repulled. If Forgejo's database no longer has a registration, that tier needs replacement credentials.
 
 ## Limitations and Differences
 
-1. **Only the Forgejo on this device.** There is no field for a remote forge; the address is resolved from the local dependency.
-2. **Saving Configure restarts a running runner**; the runner's configuration is regenerated on each start, never reloaded live.
-3. **The service refuses to start on small hardware** — under 2 cores or roughly a 4 GB machine.
-4. **Emulated jobs are much slower than native.** The toggle exists for occasional cross-architecture work; a native runner per architecture is the better arrangement for regular builds.
-5. **Jobs run privileged and can control the service's Docker engine.** Run only trusted workflows; jobs on this runner are not a security boundary from one another.
-6. **No riscv64 build.** x86_64 and aarch64 only, and the image is not run under emulation on any other architecture.
-
----
+1. This remains **one StartOS service boundary**. Separate engines and filesystem mounts reduce accidental sharing; they are not VM-grade or separate-LXC isolation for mutually hostile tenants.
+2. Privileged jobs control the build engine, its containers, and its mounted data. Restrict that registration through Forgejo; a workflow label is not authorization.
+3. Host execution labels are unsupported in both tiers, and tier labels must be distinct.
+4. Both runners restart when either configuration changes. Their resource and outer network/user namespaces are shared.
+5. Foreign-architecture jobs run more slowly under emulation. The package itself runs natively only on x86_64 and aarch64.
+6. Scratch caches consume persistent disk space even though they are excluded from backups; disabled or interrupted builds can leave cached data.
 
 ## Quick Reference for AI Consumers
 
 ```yaml
 package_id: forgejo-runner
-image: ./Dockerfile # upstream's runner binary plus Docker CE on Debian
-architectures:
-  - x86_64
-  - aarch64
-subcontainers:
-  - forgejo-runner-sub
+image: ./Dockerfile
+architectures: [x86_64, aarch64]
+subcontainers: [forgejo-runner-sub, forgejo-build-runner-sub]
 volumes:
-  main: /data
-  scratch: /scratch # excluded from backups
+  main: /data # tier-specific subtrees only; central store remains outside engine mounts
+  scratch: /scratch # tier-specific subtrees, excluded from backups
 file_models:
   - store.json
-  - runner/rejected-uuid
+  - unprivileged/runner/rejected-uuid
+  - build/runner/rejected-uuid
 startos_managed_env_vars:
   - INSTANCE_URL
   - RUNNER_UUID
   - RUNNER_TOKEN
   - RUNNER_LABELS
   - RUNNER_CAPACITY
-  - DOCKER_HOST
+  - RUNNER_PRIVILEGED
+  - RUNNER_CONFIGURE_ACTION
   - RUNNER_SCRATCH_DIR
+  - DOCKER_HOST
   - BINFMT_DIR
-dependencies:
-  - forgejo # required; gated on its primary health check
-interfaces: {} # none; the runner accepts no inbound connections
-actions:
-  - configure
+  - RUNNER_BRIDGE
+  - RUNNER_BRIDGE_ADDRESS
+dependencies: [forgejo]
+interfaces: {}
+actions: [configure, configure-build]
 tasks:
-  - { package: forgejo-runner, action: configure, severity: critical } # while either credential is missing
-  - { package: forgejo, action: configure, severity: critical } # while Forgejo Actions is disabled
-health_checks:
-  - primary # displayed "Runner"; rejected credentials, then runner + engine liveness
+  - { action: configure, severity: critical }
+  - { action: configure-build, severity: critical }
+  - { package: forgejo, action: configure, severity: critical }
+health_checks: [primary, build-runner]
 ```

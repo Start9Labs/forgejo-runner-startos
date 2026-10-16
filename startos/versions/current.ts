@@ -1,29 +1,39 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 import { sdk } from '../sdk'
-import { DATA_DIR, mount } from '../utils'
+import { DATA_DIR, SCRATCH_DIR, mount } from '../utils'
 
 export const current = VersionInfo.of({
   version: '13.2.0:4',
   releaseNotes: {
     en_US: `- Missing credentials raise a critical Configure task; complete it before starting the runner.
-- Replaced Podman with Docker, fixing apt ID mapping. Jobs are privileged and share engine access: only run trusted workflows.
-- Nested builds use persistent scratch storage excluded from backups, StartOS DNS, and namespace-local QEMU. Obsolete Podman image caches are removed on upgrade.
+- Replaced Podman with Docker, fixing apt ID mapping. The existing registration becomes an unprivileged runner without an engine socket.
+- For container builds, enable Configure Build Runner with a separate repository/organization-scoped registration and use runs-on: startos-build. The privileged build runner is disabled by default.
+- The runners have separate engines, credentials, and storage, but share the outer StartOS service boundary. Restrict the build runner to trusted repositories; labels are not access control.
+- Nested builds use persistent scratch storage excluded from backups, StartOS DNS, and service-local QEMU. Old unpartitioned engine caches are removed on upgrade.
 - Updated start-sdk to 3.0.6.`,
     es_ES: `- Si faltan credenciales, se crea una tarea crítica Configurar; complétela antes de iniciar el ejecutor.
-- Se sustituyó Podman por Docker, corrigiendo la asignación de IDs de apt. Los trabajos son privilegiados y comparten acceso al motor: ejecute solo flujos de trabajo de confianza.
-- Las compilaciones anidadas usan almacenamiento temporal persistente excluido de las copias de seguridad, DNS de StartOS y QEMU local al espacio de nombres. Al actualizar se eliminan las cachés de imágenes de Podman obsoletas.
+- Se sustituyó Podman por Docker, corrigiendo la asignación de IDs de apt. El registro existente pasa a ser un ejecutor sin privilegios ni socket del motor.
+- Para compilar contenedores, habilite Configurar ejecutor de compilación con un registro separado limitado a un repositorio u organización y use runs-on: startos-build. Está desactivado por defecto.
+- Los ejecutores tienen motores, credenciales y almacenamiento separados, pero comparten el límite exterior del servicio StartOS. Restrinja el ejecutor de compilación a repositorios de confianza; las etiquetas no controlan el acceso.
+- Las compilaciones anidadas usan almacenamiento temporal persistente excluido de las copias de seguridad, DNS de StartOS y QEMU local al servicio. Al actualizar se eliminan las antiguas cachés sin particionar.
 - start-sdk actualizado a 3.0.6.`,
     de_DE: `- Fehlende Zugangsdaten lösen eine kritische Aufgabe „Konfigurieren“ aus; schließen Sie sie vor dem Start ab.
-- Podman wurde durch Docker ersetzt, wodurch die ID-Zuordnung für apt korrigiert wird. Jobs sind privilegiert und teilen den Engine-Zugriff: Führen Sie nur vertrauenswürdige Workflows aus.
-- Verschachtelte Builds verwenden persistente Arbeitsdaten außerhalb der Sicherungen, StartOS-DNS und namensraumlokales QEMU. Veraltete Podman-Image-Caches werden beim Update entfernt.
+- Podman wurde durch Docker ersetzt und die ID-Zuordnung für apt korrigiert. Die bestehende Registrierung wird unprivilegiert und erhält keinen Engine-Socket.
+- Für Container-Builds aktivieren Sie Build-Runner konfigurieren mit einer separaten Repository-/Organisationsregistrierung und verwenden runs-on: startos-build. Der Build-Runner ist standardmäßig deaktiviert.
+- Die Runner haben separate Engines, Zugangsdaten und Speicher, teilen jedoch die äußere StartOS-Dienstgrenze. Beschränken Sie den Build-Runner auf vertrauenswürdige Repositories; Labels sind keine Zugriffskontrolle.
+- Verschachtelte Builds verwenden persistente Arbeitsdaten außerhalb der Sicherungen, StartOS-DNS und dienstlokales QEMU. Alte ungetrennte Engine-Caches werden beim Update entfernt.
 - start-sdk auf 3.0.6 aktualisiert.`,
     pl_PL: `- Brak danych uwierzytelniających tworzy krytyczne zadanie Konfiguruj; ukończ je przed uruchomieniem runnera.
-- Zastąpiono Podman silnikiem Docker, naprawiając mapowanie ID dla apt. Zadania są uprzywilejowane i współdzielą dostęp do silnika: uruchamiaj tylko zaufane workflowy.
-- Zagnieżdżone kompilacje używają trwałego wolumenu roboczego wyłączonego z kopii zapasowych, DNS StartOS i QEMU lokalnego dla przestrzeni nazw. Przy aktualizacji usuwane są stare pamięci podręczne obrazów Podman.
+- Zastąpiono Podman silnikiem Docker i naprawiono mapowanie ID dla apt. Istniejąca rejestracja staje się nieuprzywilejowana i nie otrzymuje gniazda silnika.
+- Do budowania kontenerów włącz Konfiguruj runner kompilacji z osobną rejestracją ograniczoną do repozytorium lub organizacji i użyj runs-on: startos-build. Runner kompilacji jest domyślnie wyłączony.
+- Runnery mają osobne silniki, dane uwierzytelniające i pamięć, ale współdzielą zewnętrzną granicę usługi StartOS. Ogranicz runner kompilacji do zaufanych repozytoriów; etykiety nie kontrolują dostępu.
+- Zagnieżdżone kompilacje używają trwałego wolumenu roboczego wyłączonego z kopii zapasowych, DNS StartOS i QEMU lokalnego dla usługi. Przy aktualizacji usuwane są stare niepodzielone pamięci podręczne silnika.
 - Zaktualizowano start-sdk do 3.0.6.`,
     fr_FR: `- Sans identifiants, une tâche critique Configurer est créée ; terminez-la avant de démarrer le runner.
-- Podman est remplacé par Docker, corrigeant le mappage des identifiants pour apt. Les tâches sont privilégiées et partagent l’accès au moteur : exécutez uniquement des workflows de confiance.
-- Les compilations imbriquées utilisent un stockage de travail persistant exclu des sauvegardes, le DNS de StartOS et QEMU local à l’espace de noms. Les anciens caches d’images Podman sont supprimés à la mise à jour.
+- Podman est remplacé par Docker, corrigeant le mappage des identifiants pour apt. L’inscription existante devient non privilégiée, sans socket du moteur.
+- Pour compiler des conteneurs, activez Configurer le runner de compilation avec une inscription distincte limitée à un dépôt ou une organisation et utilisez runs-on: startos-build. Il est désactivé par défaut.
+- Les runners ont des moteurs, identifiants et stockages distincts, mais partagent la limite extérieure du service StartOS. Limitez le runner de compilation aux dépôts de confiance ; les étiquettes ne contrôlent pas les accès.
+- Les compilations imbriquées utilisent un stockage persistant exclu des sauvegardes, le DNS de StartOS et QEMU local au service. Les anciens caches non séparés sont supprimés à la mise à jour.
 - start-sdk mis à jour vers 3.0.6.`,
   },
   migrations: {
@@ -35,7 +45,15 @@ export const current = VersionInfo.of({
         'remove-podman-cache',
         (subcontainer) =>
           subcontainer.execFail(
-            ['rm', '-rf', `${DATA_DIR}/runner/containers`],
+            [
+              'sh',
+              '-ec',
+              `mkdir -p ${DATA_DIR}/unprivileged/runner
+if [ -f ${DATA_DIR}/runner/rejected-uuid ]; then
+  mv ${DATA_DIR}/runner/rejected-uuid ${DATA_DIR}/unprivileged/runner/rejected-uuid
+fi
+rm -rf ${DATA_DIR}/runner ${SCRATCH_DIR}/docker ${SCRATCH_DIR}/jobs`,
+            ],
             { user: 'root', timeout: null },
           ),
       )
