@@ -10,7 +10,7 @@
   4. Update `startos/versions/current.ts` and release notes as the packaging guide specifies.
   5. Run the action-source boundary tests and Docker backend tests, then exercise an ordinary remote action and a Docker action against the packaged runner. Verify both package architectures.
 
-The Docker build runs focused action tests, Docker backend tests and the assigned-job preparation-hook tests. Preserve the hook's cancellation/failure reporting and deferred Docker validation: opening a Docker endpoint before assignment would require idle guests again. The broader upstream runner suite includes a test requiring a live Docker daemon; a daemon-free builder cannot establish that suite passed.
+The Docker build runs focused action tests, Docker backend tests, assigned-job preparation-hook tests and single-task poller tests. Preserve the hook's cancellation/failure reporting and deferred Docker validation: opening a Docker endpoint before assignment would require idle guests again. The broader upstream runner suite includes a test requiring a live Docker daemon; a daemon-free builder cannot establish that suite passed.
 
 ## Guest image and firmware
 

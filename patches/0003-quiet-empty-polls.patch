@@ -1,0 +1,62 @@
+Subject: [PATCH] Log empty single-task polls at debug level
+
+Retire when upstream logs routine empty single-task polls below info level.
+
+diff --git a/internal/app/poll/single.go b/internal/app/poll/single.go
+index 567e3058..3f845e95 100644
+--- a/internal/app/poll/single.go
++++ b/internal/app/poll/single.go
+@@ -107,7 +107,7 @@ func (s *singleTaskPoller) Poll() error {
+ 			requestKey = gouuid.New()
+ 		}
+ 		if task == nil && s.wait {
+-			log.Infof("single task poller received no task from %s, trying again", s.client.Address())
++			log.Debugf("single task poller received no task from %s, trying again", s.client.Address())
+ 			continue
+ 		}
+ 
+diff --git a/internal/app/poll/single_test.go b/internal/app/poll/single_test.go
+index 59d35fd4..76578a6b 100644
+--- a/internal/app/poll/single_test.go
++++ b/internal/app/poll/single_test.go
+@@ -4,6 +4,7 @@
+ package poll
+ 
+ import (
++	"bytes"
+ 	"testing"
+ 	"time"
+ 
+@@ -12,6 +13,7 @@ import (
+ 	mock_client "code.forgejo.org/forgejo/runner/v13/internal/pkg/client/mocks"
+ 	"code.forgejo.org/forgejo/runner/v13/internal/pkg/config"
+ 	"connectrpc.com/connect"
++	log "github.com/sirupsen/logrus"
+ 	"github.com/stretchr/testify/mock"
+ 	"github.com/stretchr/testify/require"
+ )
+@@ -56,6 +58,15 @@ func TestSingleTaskPoller_ReturnsErrorWhenNoTaskReceived(t *testing.T) {
+ }
+ 
+ func TestSingleTaskPoller_WaitsForAvailableTask(t *testing.T) {
++	var output bytes.Buffer
++	logger := log.StandardLogger()
++	previousOutput, previousLevel := logger.Out, logger.GetLevel()
++	logger.SetOutput(&output)
++	logger.SetLevel(log.InfoLevel)
++	t.Cleanup(func() {
++		logger.SetOutput(previousOutput)
++		logger.SetLevel(previousLevel)
++	})
+ 	cfg := &config.Config{}
+ 
+ 	mockClient := mock_client.NewMockClient(t)
+@@ -76,6 +87,8 @@ func TestSingleTaskPoller_WaitsForAvailableTask(t *testing.T) {
+ 	taskPoller := NewSingleTaskPoller(t.Context(), cfg, mockClient, mockRunner, true, nil)
+ 	err := taskPoller.Poll()
+ 	require.NoError(t, err)
++	require.NotContains(t, output.String(), "received no task")
++	require.Contains(t, output.String(), "successfully fetched one task")
+ }
+ 
+ func TestSingleTaskPoller_FetchesRequestedTask(t *testing.T) {

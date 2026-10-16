@@ -13,6 +13,7 @@ export const current = VersionInfo.of({
 - Guest Docker APIs use per-VM mutual TLS. The runner is built with action-source path containment and keeps its registration outside the guest.
 - Guest images are pinned, verified and prepared once. Job disks and engine caches are excluded from backups; old engine caches are removed on upgrade.
 - Workflow labels are routing, not access control; use an appropriately scoped persistent registration.
+- Routine empty job polls are debug-only; job pickup and polling errors remain visible.
 - Corrected the upstream license to GPL-3.0-or-later.
 - Updated start-sdk to 3.0.6.`,
     es_ES: `- Si faltan credenciales, se crea una tarea crítica Configurar; complétela antes de iniciar el ejecutor.
@@ -23,6 +24,7 @@ export const current = VersionInfo.of({
 - Las API Docker de invitados usan TLS mutuo por VM. El ejecutor limita las rutas de origen de acciones y mantiene su registro fuera del invitado.
 - Las imágenes de invitados están fijadas, verificadas y se preparan una sola vez. Los discos de trabajos y las cachés se excluyen de las copias de seguridad; al actualizar se eliminan las cachés antiguas del motor.
 - Las etiquetas no controlan el acceso; use un registro persistente con alcance adecuado.
+- Los sondeos sin trabajos solo aparecen en depuración; las asignaciones y los errores siguen visibles.
 - Licencia corregida a GPL-3.0-or-later.
 - start-sdk actualizado a 3.0.6.`,
     de_DE: `- Fehlende Zugangsdaten lösen eine kritische Aufgabe „Konfigurieren“ aus; schließen Sie sie vor dem Start ab.
@@ -33,6 +35,7 @@ export const current = VersionInfo.of({
 - Gast-Docker-APIs nutzen gegenseitiges TLS pro VM. Aktionsquellpfade sind begrenzt; die Registrierung bleibt außerhalb des Gasts.
 - Gast-Images sind festgelegt, geprüft und werden einmal vorbereitet. Job-Festplatten und Caches sind nicht Teil der Sicherungen; alte Engine-Caches werden beim Update entfernt.
 - Labels sind keine Zugriffskontrolle; eine passend eingeschränkte persistente Registrierung verwenden.
+- Leere Job-Abfragen erscheinen nur im Debug-Log; Jobzuweisungen und Abfragefehler bleiben sichtbar.
 - Upstream-Lizenz auf GPL-3.0-or-later korrigiert.
 - start-sdk auf 3.0.6 aktualisiert.`,
     pl_PL: `- Brak danych uwierzytelniających tworzy krytyczne zadanie Konfiguruj; ukończ je przed uruchomieniem runnera.
@@ -43,6 +46,7 @@ export const current = VersionInfo.of({
 - API Docker gości używają wzajemnego TLS osobno dla każdej VM. Ścieżki źródeł akcji są ograniczone, a rejestracja pozostaje poza gościem.
 - Obrazy gości są przypięte, sprawdzane i przygotowywane jednorazowo. Dyski zadań oraz pamięci podręczne nie trafiają do kopii zapasowych; przy aktualizacji usuwane są stare pamięci podręczne silnika.
 - Etykiety nie kontrolują dostępu; używaj trwałej rejestracji o odpowiednim zakresie.
+- Puste odpytywania zadań są widoczne tylko w logach debugowania; przydziały i błędy pozostają widoczne.
 - Poprawiono licencję na GPL-3.0-or-later.
 - Zaktualizowano start-sdk do 3.0.6.`,
     fr_FR: `- Sans identifiants, une tâche critique Configurer est créée ; terminez-la avant de démarrer le runner.
@@ -53,6 +57,7 @@ export const current = VersionInfo.of({
 - Les API Docker invitées utilisent un TLS mutuel propre à chaque VM. Les chemins sources des actions sont bornés et l’inscription reste hors de l’invité.
 - Les images invitées sont épinglées, vérifiées et préparées une fois. Les disques de tâches et caches sont exclus des sauvegardes ; les anciens caches du moteur sont supprimés à la mise à jour.
 - Les étiquettes ne contrôlent pas l’accès ; utilisez une inscription persistante de portée adaptée.
+- Les interrogations sans tâche restent au niveau debug ; les attributions et erreurs restent visibles.
 - Licence corrigée en GPL-3.0-or-later.
 - start-sdk mis à jour vers 3.0.6.`,
   },
