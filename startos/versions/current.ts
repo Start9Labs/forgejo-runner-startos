@@ -3,7 +3,7 @@ import { sdk } from '../sdk'
 import { DATA_DIR, SCRATCH_DIR, mount } from '../utils'
 
 export const current = VersionInfo.of({
-  version: '13.2.0:4',
+  version: '13.2.0:5',
   releaseNotes: {
     en_US: `- Missing credentials raise a critical Configure task; complete it before starting the runner.
 - Replaced Podman with Docker, fixing apt ID mapping. The existing registration becomes an unprivileged runner without an engine socket.
