@@ -12,6 +12,16 @@ export const SCRATCH_DIR = '/scratch'
 export const JOB_SCRATCH_DIR = `${SCRATCH_DIR}/jobs`
 export const RUNTIME_DIR = `${SCRATCH_DIR}/run`
 export const DOCKER_HOST = `unix://${RUNTIME_DIR}/docker.sock`
+export const ROOT_CA_PATH =
+  '/usr/local/share/ca-certificates/startos-root-ca.crt'
+
+export async function installRootCa(
+  subcontainer: ReturnType<typeof sdk.SubContainer.of>,
+  rootCa: string,
+) {
+  await subcontainer.writeFile(ROOT_CA_PATH, rootCa, { mode: 0o644 })
+  await subcontainer.execFail(['update-ca-certificates'], { user: 'root' })
+}
 
 export type RunnerSettings = {
   runnerUuid: string

@@ -27,7 +27,7 @@ expected=$(jq -r --arg arch "$arch" '.sha512[$arch]' "$images")
 base_url=$(jq -r .baseUrl "$images")
 helper_image=$(jq -r .helperImage "$images")
 image=/cache/cloud-$arch.qcow2
-fingerprint=$({ printf '%s\n' "$arch"; sha256sum "$images" "$template" /usr/local/libexec/runner-vm.sh /usr/local/bin/prepare-vm.sh; } | sha256sum | cut -d' ' -f1)
+fingerprint=$({ printf '%s\n' "$arch"; sha256sum "$images" "$template" "${RUNNER_ROOT_CA:?}" /usr/local/libexec/runner-vm.sh /usr/local/bin/prepare-vm.sh; } | sha256sum | cut -d' ' -f1)
 if [ -f /cache/prepared.qcow2 ] && [ "$(cat /cache/prepared.id 2>/dev/null)" = "$fingerprint" ]; then
   echo 'Prepared guest image is current'
   exit 0

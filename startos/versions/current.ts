@@ -17,6 +17,7 @@ export const current = VersionInfo.of({
 - Isolated action-source caches per job to prevent abandoned Git locks from blocking later jobs.
 - VM image download and installation report Loading; idle job slots report Waiting separately from controller readiness.
 - Balanced hotplugged guest RAM between kernel and movable zones to prevent kernel-allocation OOMs with free RAM; unchanged memory targets no longer generate repeated device notifications.
+- Install the public OS root CA in workflow job containers and Node action trust, and route Forgejo's local hostnames through the OS bridge without disabling TLS verification.
 - Corrected the upstream license to GPL-3.0-or-later.
 - Updated start-sdk to 3.0.6.`,
     es_ES: `- Si faltan credenciales, se crea una tarea crítica Configurar; complétela antes de iniciar el ejecutor.
@@ -31,6 +32,7 @@ export const current = VersionInfo.of({
 - Cachés de código de acciones separadas por trabajo para evitar bloqueos de Git abandonados.
 - La preparación de la imagen indica Cargando; los trabajos inactivos indican En espera sin bloquear el ejecutor.
 - La memoria añadida equilibra las zonas del núcleo y móviles para evitar falta de memoria del núcleo con RAM libre; los objetivos sin cambios no repiten notificaciones.
+- Se instala la CA pública del sistema en los trabajos y en Node, y los nombres locales de Forgejo se enrutan por el puente del sistema sin desactivar TLS.
 - Licencia corregida a GPL-3.0-or-later.
 - start-sdk actualizado a 3.0.6.`,
     de_DE: `- Fehlende Zugangsdaten lösen eine kritische Aufgabe „Konfigurieren“ aus; schließen Sie sie vor dem Start ab.
@@ -45,6 +47,7 @@ export const current = VersionInfo.of({
 - Getrennte Aktionsquellen-Caches pro Job verhindern Blockaden durch zurückgelassene Git-Sperren.
 - Die VM-Abbildvorbereitung zeigt Laden; inaktive Job-Slots zeigen Warten unabhängig von der Controller-Bereitschaft.
 - Hotplug-RAM wird zwischen Kernel- und verschiebbaren Zonen ausgeglichen, um Kernel-Speichermangel trotz freiem RAM zu verhindern; unveränderte Ziele senden keine wiederholten Gerätenachrichten.
+- Die öffentliche OS-Stamm-CA wird in Job-Containern und Node installiert; lokale Forgejo-Namen nutzen die OS-Bridge ohne deaktivierte TLS-Prüfung.
 - Upstream-Lizenz auf GPL-3.0-or-later korrigiert.
 - start-sdk auf 3.0.6 aktualisiert.`,
     pl_PL: `- Brak danych uwierzytelniających tworzy krytyczne zadanie Konfiguruj; ukończ je przed uruchomieniem runnera.
@@ -59,6 +62,7 @@ export const current = VersionInfo.of({
 - Osobne pamięci podręczne źródeł akcji dla każdego zadania zapobiegają blokowaniu przez porzucone blokady Git.
 - Przygotowanie obrazu maszyny pokazuje Ładowanie, a bezczynne zadania Oczekiwanie, niezależnie od gotowości kontrolera.
 - Dodawana pamięć równoważy strefy jądra i przenośne, zapobiegając brakowi pamięci jądra mimo wolnej RAM; niezmienione cele nie powtarzają powiadomień urządzenia.
+- Publiczny główny certyfikat systemu trafia do kontenerów zadań i Node; lokalne nazwy Forgejo używają mostu systemu bez wyłączania weryfikacji TLS.
 - Poprawiono licencję na GPL-3.0-or-later.
 - Zaktualizowano start-sdk do 3.0.6.`,
     fr_FR: `- Sans identifiants, une tâche critique Configurer est créée ; terminez-la avant de démarrer le runner.
@@ -73,6 +77,7 @@ export const current = VersionInfo.of({
 - Les caches de sources des actions sont séparés par tâche pour éviter les blocages dus aux verrous Git abandonnés.
 - La préparation de l’image indique Chargement ; les tâches inactives indiquent En attente sans bloquer le contrôleur.
 - La mémoire ajoutée équilibre les zones noyau et mobiles pour éviter les OOM du noyau malgré de la RAM libre ; les cibles inchangées ne répètent plus les notifications.
+- La CA racine publique du système est installée dans les tâches et Node ; les noms locaux de Forgejo passent par le pont OS sans désactiver la vérification TLS.
 - Licence corrigée en GPL-3.0-or-later.
 - start-sdk mis à jour vers 3.0.6.`,
   },

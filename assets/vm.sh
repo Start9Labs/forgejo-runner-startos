@@ -41,6 +41,7 @@ vm_boot() {
   vm_issue_certificate client clientAuth
   rm /data/tls/ca.key
   sed \
+    -e "s|@STARTOS_ROOT_CA@|$(base64 -w0 "${RUNNER_ROOT_CA:?}")|g" \
     -e "s|@TLS_CA@|$(base64 -w0 /data/tls/ca.pem)|g" \
     -e "s|@TLS_SERVER_CERT@|$(base64 -w0 /data/tls/server/cert.pem)|g" \
     -e "s|@TLS_SERVER_KEY@|$(base64 -w0 /data/tls/server/key.pem)|g" \

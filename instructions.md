@@ -51,7 +51,7 @@ For the workflow's own Forgejo repository, use a checkout action that authentica
 - uses: https://github.com/actions/checkout@v4
 ```
 
-Upload any artifacts you want to keep before a virtualized job finishes. Files left only on its VM are deleted. Forgejo's **Primary URL** must resolve from the workflow container, and that container must trust its certificate chain. The runner does not automatically add StartOS's private CA or resolve `.local` names inside job images.
+Upload any artifacts you want to keep before a virtualized job finishes. Files left only on its VM are deleted. The runner installs the OS root certificate in workflow job containers and routes Forgejo's `.local` names through the OS bridge, with TLS verification enabled. Node actions receive the certificate as extra trust. Custom images without a system CA updater must supply their own trust tooling for other clients.
 
 ## Replacing a forgotten registration
 

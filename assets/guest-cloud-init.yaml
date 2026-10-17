@@ -5,6 +5,10 @@ disable_root: true
 ssh_pwauth: false
 users: []
 write_files:
+  - path: /usr/local/share/ca-certificates/startos-root-ca.crt
+    permissions: '0644'
+    encoding: b64
+    content: '@STARTOS_ROOT_CA@'
   - path: /etc/docker/tls/ca.pem
     permissions: '0600'
     encoding: b64
@@ -25,6 +29,7 @@ write_files:
       ExecStart=
       ExecStart=/usr/sbin/dockerd -H fd:// -H tcp://0.0.0.0:2376 --tlsverify --tlscacert=/etc/docker/tls/ca.pem --tlscert=/etc/docker/tls/cert.pem --tlskey=/etc/docker/tls/key.pem --containerd=/run/containerd/containerd.sock
 runcmd:
+  - [update-ca-certificates]
   - [sh, -ec, 'if test -s /run/systemd/resolve/resolv.conf; then ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf; fi']
   - [apt-get, clean]
   - [sh, -ec, 'sync; echo 3 > /proc/sys/vm/drop_caches']

@@ -45,6 +45,7 @@ if [ "$RUNNER_PRIVILEGED" = true ]; then
   RESOLV_CONF=/etc/resolv.conf
   SOCKET_OPTION=
   SOCKET_VOLUME=
+  HOST_OPTIONS=$(jq -er 'if type != "array" or any(.[]; type != "string" or (test("^[A-Za-z0-9][A-Za-z0-9.-]*:[0-9.]+$") | not)) then error("Invalid local host mapping") else map(" --add-host " + .) | join("") end' <<< "${RUNNER_LOCAL_HOSTS:-[]}")
   ENGINE_ENDPOINT=automount
   if [[ "$DOCKER_HOST" = tcp://* ]]; then
     ENGINE_ENDPOINT=$DOCKER_HOST
@@ -54,7 +55,7 @@ if [ "$RUNNER_PRIVILEGED" = true ]; then
   fi
   sed -i \
     -e "s|^  docker_host: \"-\"$|  docker_host: \"${ENGINE_ENDPOINT}\"|" \
-    -e "s|^  options:$|  options: \"--volume ${RUNNER_SCRATCH_DIR}:/root/setup-docker-action --volume ${RESOLV_CONF}:${RESOLV_CONF}:ro${SOCKET_OPTION}\"|" \
+    -e "s|^  options:$|  options: \"--volume ${RUNNER_SCRATCH_DIR}:/root/setup-docker-action --volume ${RESOLV_CONF}:${RESOLV_CONF}:ro${SOCKET_OPTION}${HOST_OPTIONS}\"|" \
     -e "s|^  valid_volumes: \[\]$|  valid_volumes: [\"${RUNNER_SCRATCH_DIR}\", \"${RESOLV_CONF}\"${SOCKET_VOLUME}]|" \
     "$CONFIG"
 fi

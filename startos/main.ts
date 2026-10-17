@@ -17,6 +17,8 @@ import {
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
+  installRootCa,
+  ROOT_CA_PATH,
 } from './utils'
 
 export const main = sdk.setupMain(async ({ effects }) => {
@@ -44,6 +46,23 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ),
     )
   const available = await virtualizationAvailable(effects)
+  const rootCa = await sdk.getRootCa(effects)
+  const osIp = await sdk.getOsIp(effects)
+  const localHosts = await sdk.host
+    .get(effects, { packageId: 'forgejo', hostId: forgejoHostId }, (host) =>
+      [
+        ...new Set(
+          Object.values(host?.bindings[uiPort]?.interfaces ?? {})
+            .flatMap((iface) =>
+              iface.addressInfo
+                .filter({ kind: 'mdns' })
+                .format('hostname-info'),
+            )
+            .map((address) => `${address.hostname}:${osIp}`),
+        ),
+      ].sort(),
+    )
+    .const()
   const env = {
     INSTANCE_URL: `http://${forgeBridge}`,
     RUNNER_UUID: store.runnerUuid,
@@ -51,6 +70,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
     RUNNER_LABELS: runnerLabels(store).join(','),
     RUNNER_PRIVILEGED: 'true',
     RUNNER_CONFIGURE_ACTION: i18n('Configure'),
+    RUNNER_ROOT_CA: ROOT_CA_PATH,
+    RUNNER_LOCAL_HOSTS: JSON.stringify(localHosts),
   }
   if (!store.virtualization || !available) {
     const controllerPath = './controller/container'
@@ -83,6 +104,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
         }),
       'runner-controller',
     )
+    await installRootCa(engine, rootCa)
+    await installRootCa(controller, rootCa)
     const rejection = rejectedUuid(controllerPath)
     return sdk.Daemons.of(effects)
       .addOneshot('prepare-controller', {
@@ -226,6 +249,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       }),
     'vm-image-preparation',
   )
+  await installRootCa(preparer, rootCa)
   const preparationStatusPath = '/vm/preparation.status'
   await preparer.execFail(['rm', '-f', preparationStatusPath], {
     user: 'root',
@@ -266,6 +290,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
           VM_MEMORY_MB: String(preparationResources.memoryMiB),
           VM_CPU_CORES: String(preparationResources.cpuCores),
           VM_PREPARATION_STATUS: preparationStatusPath,
+          RUNNER_ROOT_CA: ROOT_CA_PATH,
         },
       },
       requires: [],
@@ -369,6 +394,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
         }),
       `vm-worker-${slot}`,
     )
+    await installRootCa(guest, rootCa)
     const rejection = rejectedUuid(controllerPath)
     const jobHealth = async () => {
       if ((await rejection.read().once())?.trim() === store.runnerUuid) {
