@@ -16,6 +16,7 @@ case "$RUNNER_PRIVILEGED" in true|false) ;; *) exit 1 ;; esac
 DATA=/data/runner
 CONFIG="$DATA/config.yaml"
 cd "$DATA"
+source /usr/local/libexec/runner-docker-client.sh
 
 # Without credentials the forge connection is incomplete; stay alive so the
 # health check can report 'needs config' instead of crash-looping.
@@ -34,13 +35,28 @@ forgejo-runner generate-config >"$CONFIG"
 sed -i \
   -e "s/^  capacity: .*/  capacity: ${RUNNER_CAPACITY}/" \
   -e "s/^  privileged: false$/  privileged: ${RUNNER_PRIVILEGED}/" \
+  -e 's/^  env_file: .*/  env_file: ""/' \
   "$CONFIG"
+if [ -n "${RUNNER_BEFORE_JOB:-}" ]; then
+  command=$(jq -nc --arg executable "$RUNNER_BEFORE_JOB" '[$executable]')
+  sed -i "/^runner:$/a\\  before_job: $command" "$CONFIG"
+fi
 if [ "$RUNNER_PRIVILEGED" = true ]; then
   RESOLV_CONF=/etc/resolv.conf
+  SOCKET_OPTION=
+  SOCKET_VOLUME=
+  HOST_OPTIONS=$(jq -er 'if type != "array" or any(.[]; type != "string" or (test("^[A-Za-z0-9][A-Za-z0-9.-]*:[0-9.]+$") | not)) then error("Invalid local host mapping") else map(" --add-host " + .) | join("") end' <<< "${RUNNER_LOCAL_HOSTS:-[]}")
+  ENGINE_ENDPOINT=automount
+  if [[ "$DOCKER_HOST" = tcp://* ]]; then
+    ENGINE_ENDPOINT=$DOCKER_HOST
+    SOCKET_OPTION=' --volume /var/run/docker.sock:/var/run/docker.sock'
+    SOCKET_VOLUME=', "/var/run/docker.sock"'
+    sed -i -e 's/^  enabled: true$/  enabled: false/' "$CONFIG"
+  fi
   sed -i \
-    -e 's|^  docker_host: "-"$|  docker_host: "automount"|' \
-    -e "s|^  options:$|  options: \"--volume ${RUNNER_SCRATCH_DIR}:/root/setup-docker-action --volume ${RESOLV_CONF}:${RESOLV_CONF}:ro\"|" \
-    -e "s|^  valid_volumes: \[\]$|  valid_volumes: [\"${RUNNER_SCRATCH_DIR}\", \"${RESOLV_CONF}\"]|" \
+    -e "s|^  docker_host: \"-\"$|  docker_host: \"${ENGINE_ENDPOINT}\"|" \
+    -e "s|^  options:$|  options: \"--volume ${RUNNER_SCRATCH_DIR}:/root/setup-docker-action --volume ${RESOLV_CONF}:${RESOLV_CONF}:ro${SOCKET_OPTION}${HOST_OPTIONS}\"|" \
+    -e "s|^  valid_volumes: \[\]$|  valid_volumes: [\"${RUNNER_SCRATCH_DIR}\", \"${RESOLV_CONF}\"${SOCKET_VOLUME}]|" \
     "$CONFIG"
 fi
 awk -v url="$INSTANCE_URL" -v uuid="$RUNNER_UUID" -v token="$RUNNER_TOKEN" -v labels="$RUNNER_LABELS" '
@@ -74,7 +90,8 @@ rm -f "$REJECTED"
 LOG="$DATA/run/daemon.log"
 exec 3> >(tee "$LOG")
 tee_pid=$!
-forgejo-runner daemon --config "$CONFIG" >&3 2>&1 &
+if [ "$#" -eq 0 ]; then set -- daemon; fi
+forgejo-runner "$@" --config "$CONFIG" >&3 2>&1 &
 pid=$!
 exec 3>&-
 trap 'kill -TERM "$pid" 2>/dev/null' TERM INT

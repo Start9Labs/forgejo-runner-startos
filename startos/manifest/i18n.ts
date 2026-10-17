@@ -8,15 +8,15 @@ export const short = {
 
 export const long = {
   en_US:
-    'Forgejo Runner executes Forgejo Actions workflows for the Forgejo instance on this device, running each job inside a Docker container. Published under the MIT license.',
+    'Run Forgejo Actions workflows for the Forgejo on this device with one runner registration. When KVM is available, jobs use separate disposable virtual machines by default. Optional container mode shares the StartOS kernel.',
   es_ES:
-    'Forgejo Runner ejecuta flujos de trabajo de Forgejo Actions para la instancia de Forgejo en este dispositivo, ejecutando cada tarea dentro de un contenedor Docker. Publicado bajo la licencia MIT.',
+    'Ejecute flujos de Forgejo Actions con un único registro para el Forgejo de este dispositivo. Si hay KVM, cada trabajo usa por defecto una máquina virtual desechable propia. El modo contenedor opcional comparte el núcleo de StartOS.',
   de_DE:
-    'Forgejo Runner führt Forgejo-Actions-Workflows für die Forgejo-Instanz auf diesem Gerät aus und lässt jeden Auftrag in einem Docker-Container laufen. Veröffentlicht unter der MIT-Lizenz.',
+    'Forgejo-Actions-Workflows für das Forgejo auf diesem Gerät mit einer Runner-Registrierung ausführen. Mit KVM erhält jeder Job standardmäßig eine eigene wegwerfbare VM. Der optionale Containermodus teilt den StartOS-Kernel.',
   pl_PL:
-    'Forgejo Runner wykonuje przepływy pracy Forgejo Actions dla instancji Forgejo na tym urządzeniu, uruchamiając każde zadanie w kontenerze Docker. Publikowane na licencji MIT.',
+    'Uruchamiaj przepływy Forgejo Actions dla Forgejo na tym urządzeniu z jedną rejestracją runnera. Przy dostępnym KVM zadania domyślnie otrzymują osobne jednorazowe maszyny wirtualne. Opcjonalny tryb kontenerowy współdzieli jądro StartOS.',
   fr_FR:
-    "Forgejo Runner exécute les workflows Forgejo Actions pour l'instance Forgejo sur cet appareil, en lançant chaque tâche dans un conteneur Docker. Publié sous la licence MIT.",
+    'Exécutez les workflows Forgejo Actions du Forgejo de cet appareil avec une seule inscription. Avec KVM, chaque tâche reçoit par défaut sa propre VM jetable. Le mode conteneur facultatif partage le noyau StartOS.',
 }
 
 export const dependencyDescription = {

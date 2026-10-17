@@ -4,7 +4,7 @@ import { long, short } from './i18n'
 export const manifest = setupManifest({
   id: 'forgejo-runner',
   title: 'Forgejo Runner',
-  license: 'MIT',
+  license: 'GPL-3.0-or-later',
   packageRepo: 'https://github.com/Start9Labs/forgejo-runner-startos',
   upstreamRepo: 'https://code.forgejo.org/forgejo/runner',
   marketingUrl: 'https://forgejo.org/',
@@ -19,4 +19,5 @@ export const manifest = setupManifest({
     },
   },
   userspaceFilesystems: true,
+  hardwareVirtualization: true,
 })

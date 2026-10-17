@@ -3,29 +3,25 @@ import {
   mainHostId as forgejoHostId,
   uiPort,
 } from 'forgejo-startos/startos/utils'
-import { i18n } from './i18n'
 import { sdk } from './sdk'
+import { i18n } from './i18n'
 import { storeJson } from './fileModels/store.json'
 import { rejectedUuid } from './fileModels/rejectedUuid'
 import {
-  DATA_DIR,
   DOCKER_HOST,
   JOB_SCRATCH_DIR,
   MIN_CPU_CORES,
   MIN_MEMORY_BYTES,
   RUNTIME_DIR,
-  SCRATCH_DIR,
-  RunnerSettings,
-  RunnerTier,
   runnerLabels,
-  runnerMounts,
-  runnerTiers,
-  validateRunners,
+  virtualizationAvailable,
+  vmResources,
+  vmDiskSize,
+  installRootCa,
+  ROOT_CA_PATH,
 } from './utils'
 
 export const main = sdk.setupMain(async ({ effects }) => {
-  // A CI runner runs full builds (compilers, image pulls, nested containers)
-  // per job. Refuse to run on hardware that can't handle it.
   if (totalmem() < MIN_MEMORY_BYTES || cpus().length < MIN_CPU_CORES) {
     throw new Error(
       i18n(
@@ -33,17 +29,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ),
     )
   }
-
   const store = await storeJson.read().const(effects)
   if (!store) throw new Error(i18n('Store not found'))
-  validateRunners(store)
-
-  // The runner connects to its Forgejo dependency over the internal LXC bridge.
-  // `sdk.host.getBridgeAddress` resolves the address Forgejo's `http` binding
-  // itself publishes on the bridge, so it holds steady across Forgejo
-  // updates/restarts; `.const()` re-runs main only
-  // when the address itself changes (Forgejo install/uninstall/port-change),
-  // never on churn. A null (Forgejo absent) surfaces the friendly guard below.
   const forgeBridge = await sdk.host
     .getBridgeAddress(effects, {
       packageId: 'forgejo',
@@ -58,46 +45,91 @@ export const main = sdk.setupMain(async ({ effects }) => {
         'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
       ),
     )
-  const forgeUrl = `http://${forgeBridge}`
-
-  function defineRunner(tier: RunnerTier, settings: RunnerSettings) {
-    const profile = runnerTiers[tier]
-    const subcontainer = sdk.SubContainer.of(
+  const available = await virtualizationAvailable(effects)
+  const rootCa = await sdk.getRootCa(effects)
+  const osIp = await sdk.getOsIp(effects)
+  const localHosts = await sdk.host
+    .get(effects, { packageId: 'forgejo', hostId: forgejoHostId }, (host) =>
+      [
+        ...new Set(
+          Object.values(host?.bindings[uiPort]?.interfaces ?? {})
+            .flatMap((iface) =>
+              iface.addressInfo
+                .filter({ kind: 'mdns' })
+                .format('hostname-info'),
+            )
+            .map((address) => `${address.hostname}:${osIp}`),
+        ),
+      ].sort(),
+    )
+    .const()
+  const env = {
+    INSTANCE_URL: `http://${forgeBridge}`,
+    RUNNER_UUID: store.runnerUuid,
+    RUNNER_TOKEN: store.runnerToken,
+    RUNNER_LABELS: runnerLabels(store).join(','),
+    RUNNER_PRIVILEGED: 'true',
+    RUNNER_CONFIGURE_ACTION: i18n('Configure'),
+    RUNNER_ROOT_CA: ROOT_CA_PATH,
+    RUNNER_LOCAL_HOSTS: JSON.stringify(localHosts),
+  }
+  if (!store.virtualization || !available) {
+    const controllerPath = './controller/container'
+    const engine = sdk.SubContainer.of(
       effects,
       { imageId: 'main' },
-      runnerMounts(tier),
-      profile.subcontainerName,
+      sdk.Mounts.of().mountVolume({
+        volumeId: 'scratch',
+        subpath: './container',
+        mountpoint: '/scratch',
+        readonly: false,
+      }),
+      'container-engine',
     )
-    const rejection = rejectedUuid(tier)
-    const configureAction = profile.privileged
-      ? i18n('Configure Privileged Runner')
-      : i18n('Configure')
-    return {
-      ownData: {
-        subcontainer,
+    const controller = sdk.SubContainer.of(
+      effects,
+      { imageId: 'main' },
+      sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'main',
+          subpath: controllerPath,
+          mountpoint: '/data',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './container',
+          mountpoint: '/scratch',
+          readonly: false,
+        }),
+      'runner-controller',
+    )
+    await installRootCa(engine, rootCa)
+    await installRootCa(controller, rootCa)
+    const rejection = rejectedUuid(controllerPath)
+    return sdk.Daemons.of(effects)
+      .addOneshot('prepare-controller', {
+        subcontainer: controller,
+        exec: {
+          command: ['mkdir', '-p', '/data/runner/run', JOB_SCRATCH_DIR],
+          user: 'root',
+        },
+        requires: [],
+      })
+      .addOneshot('prepare-engine', {
+        subcontainer: engine,
         exec: {
           command: [
             'sh',
-            '-c',
-            `mkdir -p ${DATA_DIR}/runner${profile.privileged ? ` ${JOB_SCRATCH_DIR}` : ''} && chown app:app ${DATA_DIR}/runner`,
-          ] satisfies [string, ...string[]],
+            '-ec',
+            `rm -rf ${RUNTIME_DIR}; mkdir -p ${RUNTIME_DIR}`,
+          ],
           user: 'root',
         },
-      },
-      cleanRuntime: {
-        // Runtime sockets and PID files cannot survive a container restart.
-        subcontainer,
-        exec: {
-          command: [
-            'sh',
-            '-c',
-            `rm -rf ${RUNTIME_DIR} && install -d -o app -g app -m 0700 ${RUNTIME_DIR}`,
-          ] satisfies [string, ...string[]],
-          user: 'root',
-        },
-      },
-      engine: {
-        subcontainer,
+        requires: [],
+      })
+      .addDaemon('engine', {
+        subcontainer: engine,
         exec: {
           command: [
             '/usr/local/bin/engine.sh',
@@ -106,21 +138,21 @@ export const main = sdk.setupMain(async ({ effects }) => {
             '--group',
             'app',
             '--data-root',
-            `${SCRATCH_DIR}/docker`,
+            '/scratch/docker',
             '--exec-root',
             `${RUNTIME_DIR}/docker`,
             '--pidfile',
             `${RUNTIME_DIR}/docker.pid`,
             '--bridge',
-            profile.bridge,
+            'runner',
             '--default-address-pool',
-            `base=${profile.addressPool},size=24`,
-          ] satisfies [string, ...string[]],
+            'base=172.20.0.0/16,size=24',
+          ],
           user: 'root',
           env: {
             BINFMT_DIR: `${RUNTIME_DIR}/binfmt`,
-            RUNNER_BRIDGE: profile.bridge,
-            RUNNER_BRIDGE_ADDRESS: profile.bridgeAddress,
+            RUNNER_BRIDGE: 'runner',
+            RUNNER_BRIDGE_ADDRESS: '172.18.0.1/24',
           },
         },
         ready: {
@@ -128,55 +160,41 @@ export const main = sdk.setupMain(async ({ effects }) => {
           fn: () =>
             sdk.healthCheck.runHealthScript(
               ['docker', '--host', DOCKER_HOST, 'info'],
-              subcontainer,
+              engine,
               { timeout: 10000 },
             ),
         },
-      },
-      runner: {
-        subcontainer,
+        requires: ['prepare-engine'],
+      })
+      .addDaemon('runner', {
+        subcontainer: controller,
         exec: {
-          command: ['/usr/local/bin/entrypoint.sh'] satisfies [
-            string,
-            ...string[],
-          ],
-          user: 'app',
+          command: ['/usr/local/bin/entrypoint.sh'],
+          user: 'root',
           env: {
-            INSTANCE_URL: forgeUrl,
-            RUNNER_UUID: settings.runnerUuid,
-            RUNNER_TOKEN: settings.runnerToken,
-            RUNNER_LABELS: runnerLabels(settings, tier).join(','),
-            RUNNER_CAPACITY: String(settings.capacity),
-            RUNNER_PRIVILEGED: String(profile.privileged),
-            RUNNER_CONFIGURE_ACTION: configureAction,
+            ...env,
             DOCKER_HOST,
+            RUNNER_CAPACITY: String(store.capacity),
             RUNNER_SCRATCH_DIR: JOB_SCRATCH_DIR,
           },
         },
         ready: {
-          display: i18n(profile.display),
-          gracePeriod: 60000,
-          trigger: sdk.trigger.cooldownTrigger(30000),
+          display: i18n('Runner'),
           fn: async () =>
-            (await rejection.read().once())?.trim() === settings.runnerUuid
+            (await rejection.read().once())?.trim() === store.runnerUuid
               ? {
                   result: 'failure' as const,
-                  message: profile.privileged
-                    ? i18n(
-                        'Forgejo no longer recognizes the privileged runner. Create a new scoped registration and enter it in Configure Privileged Runner.',
-                      )
-                    : i18n(
-                        'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
-                      ),
+                  message: i18n(
+                    'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
+                  ),
                 }
               : sdk.healthCheck.runHealthScript(
                   [
-                    'bash',
-                    '-c',
-                    // `comm` is 15 characters wide, which `forgejo-runner` fits.
-                    `grep -qx forgejo-runner /proc/[0-9]*/comm 2>/dev/null && docker --host ${DOCKER_HOST} info >/dev/null`,
+                    'sh',
+                    '-ec',
+                    `grep -qx forgejo-runner /proc/[0-9]*/comm && docker --host ${DOCKER_HOST} info >/dev/null`,
                   ],
-                  subcontainer,
+                  controller,
                   {
                     timeout: 10000,
                     message: () => i18n('Runner is running'),
@@ -184,46 +202,280 @@ export const main = sdk.setupMain(async ({ effects }) => {
                   },
                 ),
         },
-      },
-    }
+        requires: ['prepare-controller', 'engine'],
+      })
+      .addHealthCheck('execution-mode', {
+        ready: {
+          display: i18n('Container Mode'),
+          fn: async () => ({
+            result: 'success',
+            message: available
+              ? i18n(
+                  'Virtualization is disabled. Jobs use privileged containers within the service and share the StartOS kernel. Only run trusted workflows.',
+                )
+              : i18n(
+                  'KVM is unavailable. Jobs use containers and share the StartOS kernel.',
+                ),
+          }),
+        },
+        requires: [],
+      })
   }
 
-  const regular = defineRunner('unprivileged', store)
-  const build = store.buildRunner.enabled
-    ? defineRunner('build', store.buildRunner)
-    : null
-  const engines = build
-    ? (['engine', 'build-engine'] as const)
-    : (['engine'] as const)
-
-  return sdk.Daemons.of(effects)
-    .addOneshot('own-data', { ...regular.ownData, requires: [] })
-    .addOneshot('clean-runtime', {
-      ...regular.cleanRuntime,
-      requires: ['own-data'],
+  const resources = vmResources(store.capacity)
+  const diskGiB = await vmDiskSize(effects, store.capacity)
+  const preparationResources = vmResources(1)
+  const preparer = sdk.SubContainer.of(
+    effects,
+    { imageId: 'main' },
+    sdk.Mounts.of()
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-images',
+        mountpoint: '/cache',
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-preparation/runtime',
+        mountpoint: '/vm',
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-preparation/control',
+        mountpoint: '/data',
+        readonly: false,
+      }),
+    'vm-image-preparation',
+  )
+  await installRootCa(preparer, rootCa)
+  const preparationStatusPath = '/vm/preparation.status'
+  await preparer.execFail(['rm', '-f', preparationStatusPath], {
+    user: 'root',
+  })
+  const memoryEnv = {
+    VM_POOL_MEMORY_MB: String(resources.memoryMiB),
+    VM_BOOT_MEMORY_MB: String(resources.bootMemoryMiB),
+    VM_MEMORY_BLOCK_MB: String(resources.blockMemoryMiB),
+    VM_MEMORY_DEVICE_ID: resources.memoryDeviceId,
+    VM_CAPACITY: String(store.capacity),
+  }
+  const memoryPool = sdk.SubContainer.of(
+    effects,
+    { imageId: 'main' },
+    sdk.Mounts.of()
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-pool',
+        mountpoint: '/pool',
+        readonly: false,
+      })
+      .mountVolume({
+        volumeId: 'scratch',
+        subpath: './vm-workers',
+        mountpoint: '/workers',
+        readonly: true,
+      }),
+    'vm-memory-pool',
+  )
+  let daemons = sdk.Daemons.of(effects)
+    .addOneshot('prepare-vm', {
+      subcontainer: preparer,
+      exec: {
+        command: ['bash', '/usr/local/bin/prepare-vm.sh'],
+        user: 'root',
+        env: {
+          VM_DOCKER_PORT: '23650',
+          VM_MEMORY_MB: String(preparationResources.memoryMiB),
+          VM_CPU_CORES: String(preparationResources.cpuCores),
+          VM_PREPARATION_STATUS: preparationStatusPath,
+          RUNNER_ROOT_CA: ROOT_CA_PATH,
+        },
+      },
+      requires: [],
     })
-    .addDaemon('engine', { ...regular.engine, requires: ['clean-runtime'] })
-    .addOneshot('build-own-data', () =>
-      build ? { ...build.ownData, requires: [] } : null,
-    )
-    .addOneshot('build-clean-runtime', () =>
-      build
-        ? {
-            ...build.cleanRuntime,
-            requires: ['build-own-data'],
+    .addHealthCheck('vm-image', {
+      ready: {
+        display: i18n('VM Image Preparation'),
+        trigger: sdk.trigger.statusTrigger(30000, {
+          loading: 1000,
+          starting: 1000,
+          failure: 5000,
+        }),
+        fn: async () => {
+          const status = await preparer.exec(
+            [
+              'sh',
+              '-ec',
+              `read -r pid phase < ${preparationStatusPath}; case "$phase" in ready|failed) ;; loading) kill -0 "$pid"; grep -qF /usr/local/bin/prepare-vm.sh /proc/$pid/cmdline;; *) exit 1;; esac; printf '%s' "$phase"`,
+            ],
+            { user: 'root', timeout: 5000 },
+          )
+          const phase = String(status.stdout).trim()
+          if (status.exitCode !== 0 || phase === 'failed') {
+            return {
+              result: 'failure',
+              message: i18n('Guest VM image preparation failed'),
+            }
           }
-        : null,
-    )
-    .addDaemon('build-engine', () =>
-      build
-        ? {
-            ...build.engine,
-            requires: ['build-clean-runtime'],
+          return phase === 'ready'
+            ? {
+                result: 'success',
+                message: i18n('Guest VM image is prepared'),
+              }
+            : {
+                result: 'loading',
+                message: i18n('Downloading and installing the guest VM image'),
+              }
+        },
+      },
+      requires: [],
+    })
+    .addDaemon('memory-pool', {
+      subcontainer: memoryPool,
+      exec: {
+        command: ['python3', '-B', '/usr/local/bin/vm-pool.py', 'serve'],
+        user: 'root',
+        env: memoryEnv,
+      },
+      ready: {
+        display: i18n('Guest Memory Pool'),
+        fn: async () => {
+          const status = await memoryPool.exec(
+            [
+              'sh',
+              '-ec',
+              'pid=$(cat /pool/manager.pid); kill -0 "$pid"; grep -qF /usr/local/bin/vm-pool.py /proc/$pid/cmdline; python3 -B /usr/local/bin/vm-pool.py status',
+            ],
+            { user: 'root', timeout: 10000 },
+          )
+          return {
+            result: status.exitCode === 0 ? 'success' : 'failure',
+            message:
+              status.exitCode === 0
+                ? i18n('Shared guest-memory controller is running')
+                : i18n('Guest-memory controller is not running'),
           }
-        : null,
+        },
+      },
+      requires: ['prepare-vm'],
+    })
+  for (let slot = 0; slot < store.capacity; slot++) {
+    const port = 23750 + slot
+    const controllerPath = `./controller/workers/${slot}`
+    const guest = sdk.SubContainer.of(
+      effects,
+      { imageId: 'main' },
+      sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-pool',
+          mountpoint: '/pool',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-images',
+          mountpoint: '/base',
+          readonly: true,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: `./vm-workers/${slot}`,
+          mountpoint: '/vm',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'main',
+          subpath: controllerPath,
+          mountpoint: '/data',
+          readonly: false,
+        }),
+      `vm-worker-${slot}`,
     )
-    .addDaemon('primary', { ...regular.runner, requires: [...engines] })
-    .addDaemon('build-runner', () =>
-      build ? { ...build.runner, requires: [...engines] } : null,
-    )
+    await installRootCa(guest, rootCa)
+    const rejection = rejectedUuid(controllerPath)
+    const jobHealth = async () => {
+      if ((await rejection.read().once())?.trim() === store.runnerUuid) {
+        return {
+          result: 'failure',
+          message: i18n(
+            'Forgejo no longer recognizes this runner. Create a new runner in Forgejo, enter its UUID and token in the Configure action, then restart this service.',
+          ),
+        } as const
+      }
+      const status = await guest.exec(
+        [
+          'sh',
+          '-ec',
+          `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in idle) if grep -qx forgejo-runner /proc/[0-9]*/comm; then echo idle; else echo starting; fi;; budget|booting|recycling) echo starting;; ready) kill -0 "$(cat /vm/qemu.pid)"; grep -qx forgejo-runner /proc/[0-9]*/comm; curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready;; *) exit 1;; esac`,
+        ],
+        { user: 'root', timeout: 5000 },
+      )
+      const phase = String(status.stdout).trim()
+      return {
+        result:
+          status.exitCode !== 0
+            ? 'failure'
+            : phase === 'idle'
+              ? 'waiting'
+              : phase === 'starting'
+                ? 'starting'
+                : 'success',
+        message:
+          status.exitCode === 0
+            ? phase === 'idle'
+              ? i18n('Waiting for a job; no VM allocated')
+              : phase === 'starting'
+                ? i18n('Preparing a disposable VM')
+                : i18n('Guest Docker is responding')
+            : i18n('Virtualized job slot is not running'),
+      } as const
+    }
+    daemons = daemons
+      .addDaemon(`worker-${slot}`, {
+        subcontainer: guest,
+        exec: {
+          command: ['bash', '/usr/local/bin/vm-worker.sh'],
+          user: 'root',
+          env: {
+            ...env,
+            ...memoryEnv,
+            VM_SLOT: String(slot),
+            RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
+            RUNNER_CAPACITY: '1',
+            RUNNER_EMULATION: String(store.emulation),
+            RUNNER_SCRATCH_DIR: '/var/lib/runner-scratch',
+            VM_DOCKER_PORT: String(port),
+            VM_DISK_GB: String(diskGiB),
+            VM_CPU_CORES: String(resources.cpuCores),
+          },
+        },
+        ready: {
+          display: null,
+          gracePeriod: 300000,
+          fn: async () => {
+            const health = await jobHealth()
+            return health.result === 'waiting'
+              ? { ...health, result: 'success' }
+              : health
+          },
+        },
+        requires: ['prepare-vm'],
+      })
+      .addHealthCheck(`jobs-${slot}`, {
+        ready: {
+          display: `${i18n('Virtualized Jobs')} ${slot + 1}`,
+          gracePeriod: 300000,
+          trigger: sdk.trigger.statusTrigger(30000, {
+            waiting: 1000,
+            starting: 1000,
+          }),
+          fn: jobHealth,
+        },
+        requires: ['vm-image'],
+      }) as typeof daemons
+  }
+  return daemons
 })
