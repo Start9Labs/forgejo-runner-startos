@@ -17,7 +17,7 @@ Forgejo must be running with Actions enabled.
 1. In Forgejo, open **Repository / Organization / Site Settings → Actions → Runners → Create new Runner**. Create a **persistent**, not ephemeral, registration and copy its UUID and token. Prefer repository scope unless every repository in a broader scope is trusted.
 2. Complete **Configure** here. Enter those credentials and choose labels and concurrency. The default label is `ubuntu-latest`.
 3. Leave **Virtualization** enabled for the guest-kernel boundary. If KVM is unavailable, the switch is off and disabled with an explanation; you can still use container mode.
-4. Start the service. First-time VM preparation can take several minutes and needs internet access. **VM Image Preparation** reports **Loading** during download and installation. Once prepared, the registration appears online in Forgejo and idle **Virtualized Jobs** checks show **Waiting for a job; no VM allocated**.
+4. Start the service. First-time VM preparation can take several minutes and needs internet access. **VM Image Preparation** reports **Loading** during download and installation. Once prepared, the registration appears online in Forgejo. **Virtualized Jobs** checks show **Success** when idle and **Loading** while preparing or running a job.
 
 A workflow can select the default label with:
 

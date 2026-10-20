@@ -419,17 +419,17 @@ export const main = sdk.setupMain(async ({ effects }) => {
           status.exitCode !== 0
             ? 'failure'
             : phase === 'idle'
-              ? 'waiting'
+              ? 'success'
               : phase === 'starting'
                 ? 'starting'
-                : 'success',
+                : 'loading',
         message:
           status.exitCode === 0
             ? phase === 'idle'
-              ? i18n('Waiting for a job; no VM allocated')
+              ? i18n('Ready for a job; no VM allocated')
               : phase === 'starting'
                 ? i18n('Preparing a disposable VM')
-                : i18n('Guest Docker is responding')
+                : i18n('Running a job')
             : i18n('Virtualized job slot is not running'),
       } as const
     }
@@ -457,7 +457,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
           gracePeriod: 300000,
           fn: async () => {
             const health = await jobHealth()
-            return health.result === 'waiting'
+            return health.result === 'loading'
               ? { ...health, result: 'success' }
               : health
           },
@@ -469,10 +469,16 @@ export const main = sdk.setupMain(async ({ effects }) => {
           display: `${i18n('Virtualized Jobs')} ${slot + 1}`,
           gracePeriod: 300000,
           trigger: sdk.trigger.statusTrigger(30000, {
-            waiting: 1000,
+            success: 1000,
+            loading: 1000,
             starting: 1000,
           }),
-          fn: jobHealth,
+          fn: async () => {
+            const health = await jobHealth()
+            return health.result === 'starting'
+              ? { ...health, result: 'loading' }
+              : health
+          },
         },
         requires: ['vm-image'],
       }) as typeof daemons

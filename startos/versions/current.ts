@@ -15,11 +15,11 @@ export const current = VersionInfo.of({
 - Workflow labels are routing, not access control; use an appropriately scoped persistent registration.
 - Routine empty job polls are debug-only; job pickup and polling errors remain visible.
 - Isolated action-source caches per job to prevent abandoned Git locks from blocking later jobs.
-- VM image download and installation report Loading; idle job slots report Waiting separately from controller readiness.
+- VM image download and installation report Loading. Job slots show Success when idle and Loading while preparing or running a job, independently of controller readiness.
 - Balanced hotplugged guest RAM between kernel and movable zones to prevent kernel-allocation OOMs with free RAM; unchanged memory targets no longer generate repeated device notifications.
 - Install the public OS root CA in workflow job containers and Node action trust, and route Forgejo's local hostnames through the OS bridge without disabling TLS verification.
 - Corrected the upstream license to GPL-3.0-or-later.
-- Updated start-sdk to 3.0.6.`,
+- Updated start-sdk to 3.1.0.`,
     es_ES: `- Si faltan credenciales, se crea una tarea crítica Configurar; complétela antes de iniciar el ejecutor.
 - Se sustituyó Podman por Docker, corrigiendo la asignación de IDs de apt.
 - Un único registro persistente atiende todos los trabajos. Cada trabajo virtualizado recibe una máquina virtual desechable propia, también al ejecutarse en paralelo.
@@ -30,11 +30,11 @@ export const current = VersionInfo.of({
 - Las etiquetas no controlan el acceso; use un registro persistente con alcance adecuado.
 - Los sondeos sin trabajos solo aparecen en depuración; las asignaciones y los errores siguen visibles.
 - Cachés de código de acciones separadas por trabajo para evitar bloqueos de Git abandonados.
-- La preparación de la imagen indica Cargando; los trabajos inactivos indican En espera sin bloquear el ejecutor.
+- La preparación de la imagen indica Cargando. Los trabajos inactivos indican Éxito, y su preparación o ejecución indica Cargando, sin bloquear el ejecutor.
 - La memoria añadida equilibra las zonas del núcleo y móviles para evitar falta de memoria del núcleo con RAM libre; los objetivos sin cambios no repiten notificaciones.
 - Se instala la CA pública del sistema en los trabajos y en Node, y los nombres locales de Forgejo se enrutan por el puente del sistema sin desactivar TLS.
 - Licencia corregida a GPL-3.0-or-later.
-- start-sdk actualizado a 3.0.6.`,
+- start-sdk actualizado a 3.1.0.`,
     de_DE: `- Fehlende Zugangsdaten lösen eine kritische Aufgabe „Konfigurieren“ aus; schließen Sie sie vor dem Start ab.
 - Podman wurde durch Docker ersetzt und die ID-Zuordnung für apt korrigiert.
 - Eine persistente Runner-Registrierung bedient alle Jobs. Jeder virtualisierte Job erhält eine eigene wegwerfbare VM, auch bei paralleler Ausführung.
@@ -45,11 +45,11 @@ export const current = VersionInfo.of({
 - Labels sind keine Zugriffskontrolle; eine passend eingeschränkte persistente Registrierung verwenden.
 - Leere Job-Abfragen erscheinen nur im Debug-Log; Jobzuweisungen und Abfragefehler bleiben sichtbar.
 - Getrennte Aktionsquellen-Caches pro Job verhindern Blockaden durch zurückgelassene Git-Sperren.
-- Die VM-Abbildvorbereitung zeigt Laden; inaktive Job-Slots zeigen Warten unabhängig von der Controller-Bereitschaft.
+- Die VM-Abbildvorbereitung zeigt Laden. Inaktive Job-Slots zeigen Erfolg, Vorbereitung und Ausführung zeigen Laden, unabhängig von der Controller-Bereitschaft.
 - Hotplug-RAM wird zwischen Kernel- und verschiebbaren Zonen ausgeglichen, um Kernel-Speichermangel trotz freiem RAM zu verhindern; unveränderte Ziele senden keine wiederholten Gerätenachrichten.
 - Die öffentliche OS-Stamm-CA wird in Job-Containern und Node installiert; lokale Forgejo-Namen nutzen die OS-Bridge ohne deaktivierte TLS-Prüfung.
 - Upstream-Lizenz auf GPL-3.0-or-later korrigiert.
-- start-sdk auf 3.0.6 aktualisiert.`,
+- start-sdk auf 3.1.0 aktualisiert.`,
     pl_PL: `- Brak danych uwierzytelniających tworzy krytyczne zadanie Konfiguruj; ukończ je przed uruchomieniem runnera.
 - Zastąpiono Podman silnikiem Docker i naprawiono mapowanie ID dla apt.
 - Jedna trwała rejestracja runnera obsługuje wszystkie zadania. Każde zadanie wirtualizowane otrzymuje osobną jednorazową maszynę, także przy pracy równoległej.
@@ -60,11 +60,11 @@ export const current = VersionInfo.of({
 - Etykiety nie kontrolują dostępu; używaj trwałej rejestracji o odpowiednim zakresie.
 - Puste odpytywania zadań są widoczne tylko w logach debugowania; przydziały i błędy pozostają widoczne.
 - Osobne pamięci podręczne źródeł akcji dla każdego zadania zapobiegają blokowaniu przez porzucone blokady Git.
-- Przygotowanie obrazu maszyny pokazuje Ładowanie, a bezczynne zadania Oczekiwanie, niezależnie od gotowości kontrolera.
+- Przygotowanie obrazu maszyny pokazuje Ładowanie. Bezczynne zadania pokazują Sukces, a przygotowanie i wykonywanie zadania Ładowanie, niezależnie od gotowości kontrolera.
 - Dodawana pamięć równoważy strefy jądra i przenośne, zapobiegając brakowi pamięci jądra mimo wolnej RAM; niezmienione cele nie powtarzają powiadomień urządzenia.
 - Publiczny główny certyfikat systemu trafia do kontenerów zadań i Node; lokalne nazwy Forgejo używają mostu systemu bez wyłączania weryfikacji TLS.
 - Poprawiono licencję na GPL-3.0-or-later.
-- Zaktualizowano start-sdk do 3.0.6.`,
+- Zaktualizowano start-sdk do 3.1.0.`,
     fr_FR: `- Sans identifiants, une tâche critique Configurer est créée ; terminez-la avant de démarrer le runner.
 - Podman est remplacé par Docker, corrigeant le mappage des identifiants pour apt.
 - Une seule inscription persistante sert toutes les tâches. Chaque tâche virtualisée reçoit sa propre VM jetable, y compris en parallèle.
@@ -75,11 +75,11 @@ export const current = VersionInfo.of({
 - Les étiquettes ne contrôlent pas l’accès ; utilisez une inscription persistante de portée adaptée.
 - Les interrogations sans tâche restent au niveau debug ; les attributions et erreurs restent visibles.
 - Les caches de sources des actions sont séparés par tâche pour éviter les blocages dus aux verrous Git abandonnés.
-- La préparation de l’image indique Chargement ; les tâches inactives indiquent En attente sans bloquer le contrôleur.
+- La préparation de l’image indique Chargement. Les tâches inactives indiquent Succès, leur préparation et exécution indiquent Chargement, sans bloquer le contrôleur.
 - La mémoire ajoutée équilibre les zones noyau et mobiles pour éviter les OOM du noyau malgré de la RAM libre ; les cibles inchangées ne répètent plus les notifications.
 - La CA racine publique du système est installée dans les tâches et Node ; les noms locaux de Forgejo passent par le pont OS sans désactiver la vérification TLS.
 - Licence corrigée en GPL-3.0-or-later.
-- start-sdk mis à jour vers 3.0.6.`,
+- start-sdk mis à jour vers 3.1.0.`,
   },
   migrations: {
     up: async ({ effects }) => {
