@@ -8,6 +8,7 @@ export const current = VersionInfo.of({
     en_US: `- Missing credentials raise a critical Configure task; complete it before starting the runner.
 - Replaced Podman with Docker, fixing apt ID mapping.
 - One persistent runner registration serves all jobs. Virtualized jobs each receive a fresh disposable VM, including concurrent jobs.
+- Jobs and matrix entries expanded inside one reusable-workflow assignment run sequentially, so concurrency one cannot start parallel architecture builds.
 - VMs boot only after job assignment; idle slots allocate no guest. Active guests share one RAM pool, borrowing unused capacity and waiting for confirmed reclamation before more memory is granted.
 - Virtualization defaults on when KVM is available. Without KVM the option is off and disabled; container mode remains available and shares the StartOS kernel. VM failures never silently select container mode.
 - Guest Docker APIs use per-VM mutual TLS. The runner is built with action-source path containment and keeps its registration outside the guest.
@@ -23,6 +24,7 @@ export const current = VersionInfo.of({
     es_ES: `- Si faltan credenciales, se crea una tarea crítica Configurar; complétela antes de iniciar el ejecutor.
 - Se sustituyó Podman por Docker, corrigiendo la asignación de IDs de apt.
 - Un único registro persistente atiende todos los trabajos. Cada trabajo virtualizado recibe una máquina virtual desechable propia, también al ejecutarse en paralelo.
+- Los trabajos y matrices de una misma asignación reutilizable se ejecutan secuencialmente; concurrencia uno no inicia compilaciones paralelas.
 - Las máquinas arrancan tras asignar un trabajo; las instancias inactivas no mantienen invitados. Los invitados activos comparten una reserva de RAM y esperan a confirmar su recuperación antes de conceder más memoria.
 - La virtualización está activada por defecto si hay KVM. Sin KVM, la opción queda desactivada y bloqueada; los contenedores siguen disponibles y comparten el núcleo de StartOS. Un fallo de VM nunca cambia de modo automáticamente.
 - Las API Docker de invitados usan TLS mutuo por VM. El ejecutor limita las rutas de origen de acciones y mantiene su registro fuera del invitado.
@@ -38,6 +40,7 @@ export const current = VersionInfo.of({
     de_DE: `- Fehlende Zugangsdaten lösen eine kritische Aufgabe „Konfigurieren“ aus; schließen Sie sie vor dem Start ab.
 - Podman wurde durch Docker ersetzt und die ID-Zuordnung für apt korrigiert.
 - Eine persistente Runner-Registrierung bedient alle Jobs. Jeder virtualisierte Job erhält eine eigene wegwerfbare VM, auch bei paralleler Ausführung.
+- Jobs und Matrixeinträge innerhalb einer wiederverwendbaren Zuweisung laufen nacheinander; Parallelität eins startet keine parallelen Architektur-Builds.
 - VMs starten erst nach Jobzuweisung; inaktive Slots halten keinen Gast. Aktive Gäste teilen ein RAM-Budget und nutzen freie Kapazität. Weitere Zuweisungen warten auf bestätigte Speicherrückgabe.
 - Virtualisierung ist mit KVM standardmäßig aktiv. Ohne KVM ist die Option deaktiviert und gesperrt; Container teilen den StartOS-Kernel. VM-Fehler wechseln niemals automatisch den Modus.
 - Gast-Docker-APIs nutzen gegenseitiges TLS pro VM. Aktionsquellpfade sind begrenzt; die Registrierung bleibt außerhalb des Gasts.
@@ -53,6 +56,7 @@ export const current = VersionInfo.of({
     pl_PL: `- Brak danych uwierzytelniających tworzy krytyczne zadanie Konfiguruj; ukończ je przed uruchomieniem runnera.
 - Zastąpiono Podman silnikiem Docker i naprawiono mapowanie ID dla apt.
 - Jedna trwała rejestracja runnera obsługuje wszystkie zadania. Każde zadanie wirtualizowane otrzymuje osobną jednorazową maszynę, także przy pracy równoległej.
+- Zadania i wpisy macierzy w jednym przydziale przepływu wielokrotnego użytku wykonują się kolejno; limit jeden nie uruchamia równoległych kompilacji.
 - Maszyny startują dopiero po przydzieleniu zadania; bezczynne stanowiska nie utrzymują gości. Aktywni goście dzielą pulę RAM, wykorzystując wolne zasoby i czekając na potwierdzone odzyskanie pamięci przed kolejnym przydziałem.
 - Wirtualizacja jest domyślnie włączona przy dostępnym KVM. Bez KVM opcja jest wyłączona i zablokowana; kontenery współdzielą jądro StartOS. Awaria VM nigdy nie przełącza automatycznie trybu.
 - API Docker gości używają wzajemnego TLS osobno dla każdej VM. Ścieżki źródeł akcji są ograniczone, a rejestracja pozostaje poza gościem.
@@ -68,6 +72,7 @@ export const current = VersionInfo.of({
     fr_FR: `- Sans identifiants, une tâche critique Configurer est créée ; terminez-la avant de démarrer le runner.
 - Podman est remplacé par Docker, corrigeant le mappage des identifiants pour apt.
 - Une seule inscription persistante sert toutes les tâches. Chaque tâche virtualisée reçoit sa propre VM jetable, y compris en parallèle.
+- Les tâches et matrices d’une même attribution réutilisable s’exécutent successivement ; une concurrence de un ne lance pas de compilations parallèles.
 - Les VM démarrent après attribution ; les emplacements inactifs ne gardent aucun invité. Les invités actifs partagent un budget RAM et empruntent la capacité libre ; toute nouvelle allocation attend la restitution confirmée de mémoire.
 - La virtualisation est activée par défaut avec KVM. Sans KVM, l’option est désactivée et verrouillée ; les conteneurs partagent le noyau StartOS. Une panne de VM ne change jamais automatiquement de mode.
 - Les API Docker invitées utilisent un TLS mutuel propre à chaque VM. Les chemins sources des actions sont bornés et l’inscription reste hors de l’invité.

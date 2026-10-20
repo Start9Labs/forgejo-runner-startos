@@ -180,7 +180,7 @@ export function runnerInput() {
     capacity: Value.number({
       name: i18n('Concurrent Jobs'),
       description: i18n(
-        'Maximum concurrent jobs. VMs boot only after assignment and share one guest-memory pool; a job may wait for memory.',
+        'Maximum concurrent assignments. Reusable-workflow jobs run sequentially within each assignment. VMs share one guest-memory pool; a job may wait for memory.',
       ),
       required: true,
       default: 1,

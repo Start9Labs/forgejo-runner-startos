@@ -13,7 +13,7 @@ const dict = {
   Labels: 9,
   'Comma-separated Docker runner labels. Use Enable Emulation for foreign-architecture labels.': 10,
   'Concurrent Jobs': 11,
-  'Maximum concurrent jobs. VMs boot only after assignment and share one guest-memory pool; a job may wait for memory.': 12,
+  'Maximum concurrent assignments. Reusable-workflow jobs run sequentially within each assignment. VMs share one guest-memory pool; a job may wait for memory.': 12,
   'Enable Emulation': 13,
   'Also serve jobs for the other CPU architecture, run under emulation (much slower than native). Appends a foreign-architecture label pinned to that platform; prefer a native runner per architecture for regular builds.': 14,
   Configure: 15,

@@ -33,7 +33,7 @@ runs-on: ubuntu-latest
 
 **Container mode** starts faster and uses less memory, but jobs run privileged containers with access to their engine and share the StartOS kernel. Use it only for trusted workflows.
 
-Saving **Configure** interrupts active jobs and restarts execution. **Concurrent Jobs** limits assigned Forgejo tasks, not parallel steps or nested matrix jobs inside a remote reusable workflow; those share the assigned task's VM and memory. It is a maximum, not a promise that every assigned job starts immediately. If active guests cannot release memory yet, an assigned job waits and reports provisioning in its logs. Guest memory includes space for kernel allocations; busy or kernel-pinned memory is not reassigned until reclaimed. Keep concurrency low for large builds; reduce concurrency or free disk space if configuration reports insufficient resources.
+Saving **Configure** interrupts active jobs and restarts execution. **Concurrent Jobs** limits simultaneous Forgejo assignments. Jobs and matrix entries inside a single reusable-workflow assignment execute sequentially, sharing its VM and memory; they cannot bypass that limit. Raising concurrency allows separate assignments to run together, not the children of one assignment. It is a maximum, not a promise that every assigned job starts immediately. If active guests cannot release memory yet, an assigned job waits and reports provisioning in its logs. Guest memory includes space for kernel allocations; busy or kernel-pinned memory is not reassigned until reclaimed. Keep concurrency low for large builds; reduce concurrency or free disk space if configuration reports insufficient resources.
 
 ## Images and emulation
 
