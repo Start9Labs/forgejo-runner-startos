@@ -27,6 +27,7 @@ import {
   vmResources,
   vmDiskSize,
   installRootCa,
+  installLocalHosts,
   ROOT_CA_PATH,
 } from './utils'
 
@@ -115,6 +116,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
     )
     await installRootCa(engine, rootCa)
     await installRootCa(controller, rootCa)
+    await installLocalHosts(engine, localHosts)
+    await installLocalHosts(controller, localHosts)
     const rejection = rejectedUuid(controllerPath)
     return sdk.Daemons.of(effects)
       .addOneshot('prepare-controller', {
@@ -259,6 +262,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     'vm-image-preparation',
   )
   await installRootCa(preparer, rootCa)
+  await installLocalHosts(preparer, localHosts)
   const preparationStatusPath = VM_PREPARATION_STATUS
   await preparer.execFail(['rm', '-f', preparationStatusPath], {
     user: 'root',
@@ -378,6 +382,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       `vm-worker-${slot}`,
     )
     await installRootCa(guest, rootCa)
+    await installLocalHosts(guest, localHosts)
     const rejection = rejectedUuid(controllerPath)
     const jobHealth = async () => {
       if ((await rejection.read().once())?.trim() === store.runnerUuid) {

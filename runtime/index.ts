@@ -1,4 +1,5 @@
 import { arch, cpus, totalmem } from 'os'
+import { isIP } from 'net'
 
 export const BINFMT_IMAGE =
   'tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
@@ -55,6 +56,33 @@ export async function installRootCa(
 ) {
   await subcontainer.writeFile(ROOT_CA_PATH, rootCa, { mode: 0o644 })
   await subcontainer.execFail(['update-ca-certificates'], { user: 'root' })
+}
+
+/** Replaces this runtime's host aliases without changing system entries. */
+export async function installLocalHosts(
+  subcontainer: {
+    execFail(command: string[], options: { user: string }): Promise<unknown>
+  },
+  hosts: string[],
+) {
+  const marker = ' # ci-runner-local-host'
+  const entries = [...new Set(hosts)].map((host) => {
+    const match = /^([A-Za-z0-9][A-Za-z0-9.-]*):(.+)$/.exec(host)
+    if (!match || isIP(match[2]) !== 4) {
+      throw new Error('Invalid local host mapping')
+    }
+    return `${match[2]} ${match[1]}${marker}`
+  })
+  await subcontainer.execFail(
+    [
+      'python3',
+      '-c',
+      'import pathlib,sys; p=pathlib.Path("/etc/hosts"); lines=[line for line in p.read_text().splitlines() if not line.endswith(sys.argv[2])]; p.write_text("\\n".join(lines+sys.argv[1].splitlines())+"\\n")',
+      entries.join('\n'),
+      marker,
+    ],
+    { user: 'root' },
+  )
 }
 
 /** Observes the worker and active guest, including Docker client authentication. */

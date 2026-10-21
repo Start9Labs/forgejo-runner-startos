@@ -8,6 +8,7 @@ This module and the scripts in `runtime/assets/` own the execution primitives sh
 - `guestDiskGiB` computes each guest's bounded disk size from available scratch MiB and capacity. Zero means insufficient or invalid input.
 - `resolveRunnerLabels` validates Docker-only, unique labels and adds an explicitly targeted foreign-architecture label when emulation is enabled. Its error strings are translation keys, not permission to fall back to host execution.
 - `installRootCa` consumes the public certificate from `sdk.getRootCa`; private-key bundles and service leaf certificates are not inputs.
+- `installLocalHosts` applies the SDK-derived hostname/IP aliases to each controller/engine rootfs. Docker `--add-host` affects jobs, not controller-side action clones; install aliases in both places. It replaces only its marked lines.
 - `BINFMT_IMAGE` pins the host helper. Pass it as the `BINFMT_IMAGE` Docker build argument; the package manifest supplies it for normal builds.
 - `VM_PREPARATION_STATUS`, `VM_PREPARATION_PROBE`, `vmPreparationState`, `VM_POOL_PROBE` and `vmPoolState` share preparation/broker status without coupling worker lifetimes.
 - `vmJobProbe` and `vmJobState` share process/API liveness and phase semantics. The package remains responsible for registration rejection, translated messages, and keeping display checks independent from daemon readiness.

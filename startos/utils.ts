@@ -13,6 +13,7 @@ export {
   EMULATION_IMAGE,
   ROOT_CA_PATH,
   installRootCa,
+  installLocalHosts,
 } from '../runtime'
 
 // Means a 4 GB device: StartOS reserves 1 GiB before reporting service RAM.
