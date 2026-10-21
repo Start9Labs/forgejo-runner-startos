@@ -4,3 +4,5 @@
 # the architectures the runner package itself runs on.
 ARCHES := x86 arm
 include node_modules/@start9labs/start-sdk/s9pk.mk
+
+javascript/index.js: $(shell find runtime -name '*.ts')

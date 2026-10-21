@@ -1,5 +1,14 @@
 import { cpus, totalmem } from 'os'
 import {
+  VM_PREPARATION_STATUS,
+  VM_PREPARATION_PROBE,
+  VM_POOL_PROBE,
+  vmJobProbe,
+  vmJobState,
+  vmPreparationState,
+  vmPoolState,
+} from '../runtime'
+import {
   mainHostId as forgejoHostId,
   uiPort,
 } from 'forgejo-startos/startos/utils'
@@ -14,10 +23,12 @@ import {
   MIN_MEMORY_BYTES,
   RUNTIME_DIR,
   runnerLabels,
+  runnerBackend,
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
   installRootCa,
+  installLocalHosts,
   ROOT_CA_PATH,
 } from './utils'
 
@@ -25,7 +36,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (totalmem() < MIN_MEMORY_BYTES || cpus().length < MIN_CPU_CORES) {
     throw new Error(
       i18n(
-        'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).',
+        'This device does not meet the minimum requirements to run CI jobs (1.5 GiB of RAM and 2 CPU cores).',
       ),
     )
   }
@@ -46,6 +57,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ),
     )
   const available = await virtualizationAvailable(effects)
+  const backend = runnerBackend(store.virtualization, available)
   const rootCa = await sdk.getRootCa(effects)
   const osIp = await sdk.getOsIp(effects)
   const localHosts = await sdk.host
@@ -73,7 +85,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     RUNNER_ROOT_CA: ROOT_CA_PATH,
     RUNNER_LOCAL_HOSTS: JSON.stringify(localHosts),
   }
-  if (!store.virtualization || !available) {
+  if (backend === 'container') {
     const controllerPath = './controller/container'
     const engine = sdk.SubContainer.of(
       effects,
@@ -106,6 +118,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
     )
     await installRootCa(engine, rootCa)
     await installRootCa(controller, rootCa)
+    await installLocalHosts(engine, localHosts)
+    await installLocalHosts(controller, localHosts)
     const rejection = rejectedUuid(controllerPath)
     return sdk.Daemons.of(effects)
       .addOneshot('prepare-controller', {
@@ -250,7 +264,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
     'vm-image-preparation',
   )
   await installRootCa(preparer, rootCa)
-  const preparationStatusPath = '/vm/preparation.status'
+  await installLocalHosts(preparer, localHosts)
+  const preparationStatusPath = VM_PREPARATION_STATUS
   await preparer.execFail(['rm', '-f', preparationStatusPath], {
     user: 'root',
   })
@@ -305,29 +320,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
         }),
         fn: async () => {
           const status = await preparer.exec(
-            [
-              'sh',
-              '-ec',
-              `read -r pid phase < ${preparationStatusPath}; case "$phase" in ready|failed) ;; loading) kill -0 "$pid"; grep -qF /usr/local/bin/prepare-vm.sh /proc/$pid/cmdline;; *) exit 1;; esac; printf '%s' "$phase"`,
-            ],
+            ['sh', '-ec', VM_PREPARATION_PROBE],
             { user: 'root', timeout: 5000 },
           )
           const phase = String(status.stdout).trim()
-          if (status.exitCode !== 0 || phase === 'failed') {
-            return {
-              result: 'failure',
-              message: i18n('Guest VM image preparation failed'),
-            }
-          }
-          return phase === 'ready'
-            ? {
-                result: 'success',
-                message: i18n('Guest VM image is prepared'),
-              }
-            : {
-                result: 'loading',
-                message: i18n('Downloading and installing the guest VM image'),
-              }
+          const health = vmPreparationState(status.exitCode, phase)
+          return { ...health, message: i18n(health.message) }
         },
       },
       requires: [],
@@ -342,21 +340,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ready: {
         display: i18n('Guest Memory Pool'),
         fn: async () => {
-          const status = await memoryPool.exec(
-            [
-              'sh',
-              '-ec',
-              'pid=$(cat /pool/manager.pid); kill -0 "$pid"; grep -qF /usr/local/bin/vm-pool.py /proc/$pid/cmdline; python3 -B /usr/local/bin/vm-pool.py status',
-            ],
-            { user: 'root', timeout: 10000 },
-          )
-          return {
-            result: status.exitCode === 0 ? 'success' : 'failure',
-            message:
-              status.exitCode === 0
-                ? i18n('Shared guest-memory controller is running')
-                : i18n('Guest-memory controller is not running'),
-          }
+          const status = await memoryPool.exec(['sh', '-ec', VM_POOL_PROBE], {
+            user: 'root',
+            timeout: 10000,
+          })
+          const health = vmPoolState(status.exitCode)
+          return { ...health, message: i18n(health.message) }
         },
       },
       requires: ['prepare-vm'],
@@ -395,6 +384,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       `vm-worker-${slot}`,
     )
     await installRootCa(guest, rootCa)
+    await installLocalHosts(guest, localHosts)
     const rejection = rejectedUuid(controllerPath)
     const jobHealth = async () => {
       if ((await rejection.read().once())?.trim() === store.runnerUuid) {
@@ -406,32 +396,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
         } as const
       }
       const status = await guest.exec(
-        [
-          'sh',
-          '-ec',
-          `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in idle) if grep -qx forgejo-runner /proc/[0-9]*/comm; then echo idle; else echo starting; fi;; budget|booting|recycling) echo starting;; ready) kill -0 "$(cat /vm/qemu.pid)"; grep -qx forgejo-runner /proc/[0-9]*/comm; curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready;; *) exit 1;; esac`,
-        ],
+        ['sh', '-ec', vmJobProbe(port, 'forgejo-runner')],
         { user: 'root', timeout: 5000 },
       )
       const phase = String(status.stdout).trim()
-      return {
-        result:
-          status.exitCode !== 0
-            ? 'failure'
-            : phase === 'idle'
-              ? 'success'
-              : phase === 'starting'
-                ? 'starting'
-                : 'loading',
-        message:
-          status.exitCode === 0
-            ? phase === 'idle'
-              ? i18n('Ready for a job; no VM allocated')
-              : phase === 'starting'
-                ? i18n('Preparing a disposable VM')
-                : i18n('Running a job')
-            : i18n('Virtualized job slot is not running'),
-      } as const
+      const health = vmJobState(status.exitCode, phase)
+      return { ...health, message: i18n(health.message) }
     }
     daemons = daemons
       .addDaemon(`worker-${slot}`, {
@@ -443,6 +413,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
             ...env,
             ...memoryEnv,
             VM_SLOT: String(slot),
+            VM_GUEST_HOSTNAME: 'forgejo-job',
             RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
             RUNNER_CAPACITY: '1',
             RUNNER_EMULATION: String(store.emulation),

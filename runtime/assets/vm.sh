@@ -28,7 +28,7 @@ vm_issue_certificate() {
 }
 
 vm_boot() {
-  local base=$1 disk_gb=$2 template=$3
+  local base=$1 disk_gb=$2 template=$3 guest_hostname=${VM_GUEST_HOSTNAME:-runner-job}
   mkdir -p /vm /data
   printf 'booting\n' > /vm/phase
   rm -f /vm/root.qcow2 /vm/seed.iso /vm/qemu.pid /vm/qmp.sock /vm/vars.fd
@@ -45,8 +45,9 @@ vm_boot() {
     -e "s|@TLS_CA@|$(base64 -w0 /data/tls/ca.pem)|g" \
     -e "s|@TLS_SERVER_CERT@|$(base64 -w0 /data/tls/server/cert.pem)|g" \
     -e "s|@TLS_SERVER_KEY@|$(base64 -w0 /data/tls/server/key.pem)|g" \
+    -e "s|@GUEST_HOSTNAME@|$guest_hostname|g" \
     "$template" > /vm/seed-input/user-data
-  printf 'instance-id: runner-%s\nlocal-hostname: forgejo-job\n' "$(cat /proc/sys/kernel/random/uuid)" > /vm/seed-input/meta-data
+  printf 'instance-id: runner-%s\nlocal-hostname: %s\n' "$(cat /proc/sys/kernel/random/uuid)" "$guest_hostname" > /vm/seed-input/meta-data
   genisoimage -quiet -output /vm/seed.iso -volid cidata -joliet -rock /vm/seed-input/user-data /vm/seed-input/meta-data
   local -a machine
   case "$(vm_arch)" in

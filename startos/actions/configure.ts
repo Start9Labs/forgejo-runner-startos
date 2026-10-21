@@ -4,6 +4,7 @@ import { storeJson } from '../fileModels/store.json'
 import {
   runnerInput,
   runnerLabels,
+  runnerBackend,
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
@@ -34,7 +35,7 @@ export const configure = sdk.Action.withInput(
         disabled: available
           ? false
           : i18n(
-              'KVM hardware virtualization is unavailable on this device. Jobs run in containers that share the StartOS kernel.',
+              'KVM is unavailable. Save with Virtualization off to explicitly use containers that share the StartOS kernel.',
             ),
       })),
     })
@@ -54,14 +55,12 @@ export const configure = sdk.Action.withInput(
   },
   async ({ effects, input }) => {
     runnerLabels(input)
-    if (input.virtualization) {
-      if (!(await virtualizationAvailable(effects))) {
-        throw new Error(
-          i18n(
-            'KVM hardware virtualization is unavailable on this device. Jobs run in containers that share the StartOS kernel.',
-          ),
-        )
-      }
+    if (
+      runnerBackend(
+        input.virtualization,
+        await virtualizationAvailable(effects),
+      ) === 'vm'
+    ) {
       vmResources(input.capacity)
       await vmDiskSize(effects, input.capacity)
     }

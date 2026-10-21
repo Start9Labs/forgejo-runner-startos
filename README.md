@@ -41,7 +41,7 @@ In container mode, `container-engine` runs rootful Docker within the StartOS ser
 | `vm-image-preparation` | Download, verify and prepare the guest base |
 | `vm-memory-pool` | Admit guests and redistribute a single RAM budget |
 | `vm-worker-N` | Host-side controller and hypervisor for slot N, starting at zero |
-| `container-engine` | Docker engine when virtualization is off or unavailable |
+| `container-engine` | Docker engine when virtualization is explicitly off |
 | `runner-controller` | One multi-job controller in container mode |
 
 ## Volume and Data Layout
@@ -90,7 +90,7 @@ Container mode uses bridge `runner` at `172.18.0.1/24`, with job networks from `
 
 ## Installation and First-Run Flow
 
-Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. A missing or inaccessible device forces container mode; an actual VM startup failure does not.
+Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. New settings default to container mode without accessible KVM. If virtualization is already enabled and KVM becomes unavailable, a critical Configure task blocks startup and main refuses to create either backend. Restore KVM access and save Configure with Virtualization on, or explicitly save it with Virtualization off to use containers. The saved choice and registration are not automatically changed; the task clears when the selected backend is usable. VM startup failures also never select container mode.
 
 The hardware floor is two CPU cores and the four-gigabyte memory class. Half the service-visible RAM, rounded down to 128 MiB blocks, forms one guest-memory pool. Configured concurrency must fit a 512 MiB boot floor per simultaneous guest. A lone active job may use the whole pool; new assignments divide fair targets among active and waiting jobs. Idle slots have no VM or guest-memory commitment.
 
@@ -133,6 +133,10 @@ A restored service must still have Forgejo and a recognized persistent registrat
 5. Initial guest preparation needs outbound access to the pinned cloud image, Debian repositories and helper image. Failed preparation does not change execution mode.
 6. Guest memory grants and disks are bounded, but CPU, networking and the StartOS host remain shared resources. A job waiting for memory has already been assigned in Forgejo; its logs report provisioning while the shared pool waits for reclamation. Busy or pinned memory can delay another job until an active guest finishes.
 7. Foreign-architecture labels use slower user-mode emulation inside the selected execution environment; native workers are preferable for regular builds.
+
+## Shared Runtime Maintenance
+
+`runtime/` owns the generic VM/engine scripts, resource and label policy, public-CA installation, and VM phase/liveness checks used by sibling runner packages. Its [integration contract](runtime/README.md) separates those primitives from this package's Forgejo registration and CLI adapter. Runtime assets install at their existing image paths; changing their source directory does not change persistent data or guest isolation.
 
 ## Quick Reference for AI Consumers
 
