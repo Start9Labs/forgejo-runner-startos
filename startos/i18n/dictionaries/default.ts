@@ -48,7 +48,7 @@ const dict = {
   'Downloading and installing the guest VM image': 55,
   'Guest VM image is prepared': 56,
   'Guest VM image preparation failed': 57,
-  'Virtualization is enabled but KVM is unavailable. Restore KVM access and restart the service, or run Configure to explicitly select container mode.': 58,
+  'Virtualization is enabled but KVM is unavailable. Restore KVM access and save Configure with Virtualization on, or run Configure to explicitly select container mode.': 58,
 }
 
 export type I18nKey = keyof typeof dict

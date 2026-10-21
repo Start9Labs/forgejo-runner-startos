@@ -29,7 +29,7 @@ runs-on: ubuntu-latest
 
 ## Choosing execution mode
 
-**Virtualization** adds a guest-kernel boundary and discards each job's VM afterward. Jobs wait for their VM to boot; idle slots use only the host-side controller. Active guests share one memory budget: a lone job can borrow more RAM, and memory is redistributed when another job arrives or finishes. VM startup or runtime failures are reported; they never silently switch to containers. If KVM becomes unavailable while Virtualization is saved as enabled, a critical Configure task blocks the runner from serving jobs. Restore KVM access and restart the service, or save Configure with Virtualization off to explicitly permit container mode. Registration is preserved.
+**Virtualization** adds a guest-kernel boundary and discards each job's VM afterward. Jobs wait for their VM to boot; idle slots use only the host-side controller. Active guests share one memory budget: a lone job can borrow more RAM, and memory is redistributed when another job arrives or finishes. VM startup or runtime failures are reported; they never silently switch to containers. If KVM becomes unavailable while Virtualization is saved as enabled, a critical Configure task blocks the runner from serving jobs. Restore KVM access and save Configure with Virtualization on, or save it with Virtualization off to explicitly permit container mode. Registration is preserved.
 
 **Container mode** starts faster and uses less memory, but jobs run privileged containers with access to their engine and share the StartOS kernel. Use it only for trusted workflows.
 

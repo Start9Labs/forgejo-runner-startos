@@ -51,7 +51,7 @@ export function resolveRunnerBackend(
   if (!available) {
     return {
       error:
-        'Virtualization is enabled but KVM is unavailable. Restore KVM access and restart the service, or run Configure to explicitly select container mode.',
+        'Virtualization is enabled but KVM is unavailable. Restore KVM access and save Configure with Virtualization on, or run Configure to explicitly select container mode.',
     } as const
   }
   return { backend: 'vm' } as const
