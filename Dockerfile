@@ -1,5 +1,5 @@
 ARG BINFMT_IMAGE
-FROM --platform=$BUILDPLATFORM golang:1.26.8-trixie AS runner
+FROM --platform=$BUILDPLATFORM golang:1.26.10-trixie AS runner
 WORKDIR /src
 COPY upstream/ ./
 COPY patches/ /patches/
