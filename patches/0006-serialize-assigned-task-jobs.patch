@@ -1,0 +1,199 @@
+Subject: [PATCH] Serialize jobs expanded within one assigned task
+
+Retire when Forgejo schedules every reusable-workflow job separately, or upstream bounds local expansion to one job per assignment.
+
+diff --git a/act/runner/runner.go b/act/runner/runner.go
+index e112f5e0..f3402206 100644
+--- a/act/runner/runner.go
++++ b/act/runner/runner.go
+@@ -32,6 +32,7 @@ type Config struct {
+ 	EventPath                          string                       // path to JSON file to use for event.json in containers
+ 	DefaultBranch                      string                       // name of the main branch for this repository
+ 	ReuseContainers                    bool                         // reuse containers to maintain state
++	SerialJobs                         bool                         // serialize local jobs and matrix entries within an assignment
+ 	ForcePull                          bool                         // force pulling of the image, even if already present
+ 	ForceRebuild                       bool                         // force rebuilding local docker image action
+ 	LogOutput                          bool                         // log the output from docker run
+@@ -247,17 +248,24 @@ func (runner *runnerImpl) NewPlanExecutor(plan *model.Plan) common.Executor {
+ 						return executor(common.WithJobErrorContainer(WithJobLogger(ctx, rc.Run.JobID, jobName, rc.Config, &rc.Masks, matrix)))
+ 					})
+ 				}
+-				pipeline = append(pipeline, common.NewParallelExecutor(maxParallel, stageExecutor...))
++				pipeline = append(pipeline, runner.parallelJobExecutor(maxParallel, stageExecutor...))
+ 			}
+ 			ncpu := max(1, runtime.NumCPU())
+ 			log.Debugf("Detected CPUs: %d", ncpu)
+-			return common.NewParallelExecutor(ncpu, pipeline...)(ctx)
++			return runner.parallelJobExecutor(ncpu, pipeline...)(ctx)
+ 		})
+ 	}
+ 
+ 	return common.NewPipelineExecutor(stagePipeline...).Then(handleFailure(plan))
+ }
+ 
++func (runner *runnerImpl) parallelJobExecutor(parallel int, executors ...common.Executor) common.Executor {
++	if runner.config.SerialJobs {
++		parallel = 1
++	}
++	return common.NewParallelExecutor(parallel, executors...)
++}
++
+ func handleFailure(plan *model.Plan) common.Executor {
+ 	return func(ctx context.Context) error {
+ 		for _, stage := range plan.Stages {
+diff --git a/act/runner/serial_jobs_test.go b/act/runner/serial_jobs_test.go
+new file mode 100644
+index 00000000..77280a81
+--- /dev/null
++++ b/act/runner/serial_jobs_test.go
+@@ -0,0 +1,138 @@
++package runner
++
++import (
++	"context"
++	"errors"
++	"os"
++	"path/filepath"
++	"strings"
++	"sync/atomic"
++	"testing"
++	"time"
++
++	"code.forgejo.org/forgejo/runner/v13/act/common"
++	"code.forgejo.org/forgejo/runner/v13/act/model"
++	"github.com/stretchr/testify/require"
++)
++
++func TestSerialJobsExecutor(t *testing.T) {
++	for _, serial := range []bool{false, true} {
++		t.Run(map[bool]string{false: "parallel-default", true: "serial"}[serial], func(t *testing.T) {
++			r := &runnerImpl{config: &Config{SerialJobs: serial}}
++			var active, peak, completed atomic.Int32
++			jobs := make([]common.Executor, 4)
++			for i := range jobs {
++				jobs[i] = func(context.Context) error {
++					current := active.Add(1)
++					for previous := peak.Load(); current > previous; previous = peak.Load() {
++						if peak.CompareAndSwap(previous, current) {
++							break
++						}
++					}
++					time.Sleep(20 * time.Millisecond)
++					active.Add(-1)
++					completed.Add(1)
++					return nil
++				}
++			}
++			require.NoError(t, r.parallelJobExecutor(4, jobs...)(t.Context()))
++			require.EqualValues(t, 4, completed.Load())
++			if serial {
++				require.EqualValues(t, 1, peak.Load())
++			} else {
++				require.Greater(t, peak.Load(), int32(1))
++			}
++		})
++	}
++}
++
++func TestSerialJobsFailureAndCancellation(t *testing.T) {
++	r := &runnerImpl{config: &Config{SerialJobs: true}}
++	failure := errors.New("job failed")
++	cleaned := false
++	err := r.parallelJobExecutor(4, func(context.Context) error { return failure }, func(context.Context) error { cleaned = true; return nil })(t.Context())
++	require.ErrorIs(t, err, failure)
++	require.True(t, cleaned)
++	ctx, cancel := context.WithCancel(t.Context())
++	started := make(chan struct{})
++	finished := make(chan error, 1)
++	var laterWork atomic.Int32
++	go func() {
++		finished <- r.parallelJobExecutor(4,
++			func(ctx context.Context) error { close(started); <-ctx.Done(); return ctx.Err() },
++			func(ctx context.Context) error {
++				if ctx.Err() == nil {
++					laterWork.Add(1)
++				}
++				return ctx.Err()
++			},
++		)(ctx)
++	}()
++	<-started
++	cancel()
++	select {
++	case err := <-finished:
++		require.ErrorIs(t, err, context.Canceled)
++	case <-time.After(5 * time.Second):
++		t.Fatal("serial cancellation did not finish")
++	}
++	require.Zero(t, laterWork.Load())
++}
++
++func TestSerialJobsPlanAndNestedMatrices(t *testing.T) {
++	root := t.TempDir()
++	t.Chdir(root)
++	t.Setenv("RUNNER_TOOL_CACHE", filepath.Join(root, "tools"))
++	workflowDir := filepath.Join(root, ".github", "workflows")
++	require.NoError(t, os.MkdirAll(workflowDir, 0o755))
++	step := `    steps:
++      - run: |
++          if ! mkdir "$LOCK_DIR"; then echo overlap >> "$TRACE_FILE"; exit 1; fi
++          trap 'rmdir "$LOCK_DIR"' EXIT
++          echo "$LABEL" >> "$TRACE_FILE"
++          sleep 0.1
++`
++	main := `name: serial plan
++on: push
++jobs:
++  matrix:
++    runs-on: self-hosted
++    strategy:
++      matrix:
++        value: [matrix-one, matrix-two]
++    env:
++      LABEL: ${{ matrix.value }}
++` + step + `  independent:
++    runs-on: self-hosted
++    env:
++      LABEL: independent
++` + step + `  nested:
++    uses: ./.github/workflows/nested.yml
++`
++	nested := `name: nested matrix
++on: workflow_call
++jobs:
++  nested:
++    runs-on: self-hosted
++    strategy:
++      matrix:
++        value: [nested-one, nested-two]
++    env:
++      LABEL: ${{ matrix.value }}
++` + step
++	require.NoError(t, os.WriteFile(filepath.Join(workflowDir, "main.yml"), []byte(main), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(workflowDir, "nested.yml"), []byte(nested), 0o644))
++	planner, err := model.NewWorkflowPlanner(workflowDir, true, false)
++	require.NoError(t, err)
++	plan, err := planner.PlanEvent("push")
++	require.NoError(t, err)
++	trace := filepath.Join(root, "trace")
++	r, err := New(&Config{SerialJobs: true, Workdir: root, ActionCacheDir: filepath.Join(root, "cache"), EventName: "push", Env: map[string]string{"LOCK_DIR": filepath.Join(root, "lock"), "TRACE_FILE": trace}, Platforms: map[string]string{"self-hosted": "-self-hosted"}})
++	require.NoError(t, err)
++	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
++	defer cancel()
++	require.NoError(t, r.NewPlanExecutor(plan)(ctx))
++	data, err := os.ReadFile(trace)
++	require.NoError(t, err)
++	require.ElementsMatch(t, []string{"matrix-one", "matrix-two", "independent", "nested-one", "nested-two"}, strings.Fields(string(data)))
++}
+diff --git a/internal/app/run/runner.go b/internal/app/run/runner.go
+index 8dd2b06e..b82f96f4 100644
+--- a/internal/app/run/runner.go
++++ b/internal/app/run/runner.go
+@@ -386,6 +386,7 @@ func (r *Runner) run(ctx context.Context, task *runnerv1.Task, reporter *report.
+ 		ActionCacheDir: actionCacheDir,
+ 
+ 		ReuseContainers:            false,
++		SerialJobs:                 true,
+ 		ForcePull:                  r.cfg.Container.ForcePull,
+ 		ForceRebuild:               r.cfg.Container.ForceRebuild,
+ 		LogOutput:                  true,

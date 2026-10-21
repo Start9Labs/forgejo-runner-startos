@@ -2,18 +2,26 @@
 
 ## Forgejo Runner
 
-- **Determining the upstream version:** latest release at <https://code.forgejo.org/forgejo/runner/releases>. The runner binary is **not** downloaded as a release asset — it is copied out of the official multi-arch image, so what matters is that the matching **image tag** exists at `code.forgejo.org/forgejo/runner`. The current pin lives in `Dockerfile`, on the first-stage `FROM` line (`FROM code.forgejo.org/forgejo/runner:<version> AS runner`); a later `COPY --from=runner /bin/forgejo-runner /usr/local/bin/forgejo-runner` pulls the binary into the Debian runtime stage. There is no `ARG`/`RUNNER_VERSION` variable.
-
-  Confirm the image tag is actually published before pinning it (a release does not guarantee an image):
-
-  ```sh
-  docker manifest inspect code.forgejo.org/forgejo/runner:<version>
-  ```
-
+- **Determining the upstream version:** releases at <https://code.forgejo.org/forgejo/runner/releases>. The `upstream/` submodule pins the source revision. The package builds that source with the patches in `patches/`; it does not copy the published runner binary.
 - **Applying the bump:**
-  1. `Dockerfile` — set the tag on `FROM code.forgejo.org/forgejo/runner:<version> AS runner` (no leading `v`).
-  2. `startos/versions/current.ts` — set `version: '<version>:0'`, or bump only the `:N` suffix if just the packaging changed. Update the release notes.
+  1. Fetch upstream tags and check out the intended release in `upstream/`. Stage the gitlink in the package repository; do not commit packaging changes inside the submodule.
+  2. Check each patch's retirement condition. Remove a patch only after verifying that upstream provides its equivalent behavior and regression coverage. Confirm remaining patches apply cleanly.
+  3. Match the Go builder in `Dockerfile` to upstream's `go.mod` toolchain, and update the version embedded by its build command.
+  4. Update `startos/versions/current.ts` and release notes as the packaging guide specifies.
+  5. Run the action-source boundary tests and Docker backend tests, then exercise an ordinary remote action and a Docker action against the packaged runner. Verify both package architectures.
 
-## Bundled QEMU
+The Docker build runs focused action/source-trust/serial-job tests, Docker backend tests, assigned-job preparation-hook tests, per-job action-source cache tests and single-task poller tests. Preserve patch `0006`'s one-active-job-per-assignment policy at both scheduling levels: independent jobs and matrix entries, recursively through reusable workflows. Do not replace it with a non-reentrant global semaphore around reusable callers: callers must execute their children without deadlocking. Verify both no-overlap within an assignment and parallel execution across separate assigned tasks. Preserve certificate-only validation: a private key or non-CA certificate must fail before anything is copied to a job. The trusted root comes from `sdk.getRootCa`, never the service leaf certificate or any private key. Verify system/Node trust, rejection of an unrelated CA, and artifact upload/download against Forgejo's default `.local` Primary URL in both VM and container modes. Preserve the hook's cancellation/failure reporting and deferred Docker validation: opening a Docker endpoint before assignment would require idle guests again. Preserve per-job action-source caches in both execution modes. The cache tests reproduce a stale `shallow.lock`, then fetch the same repository from two independent job-cache processes without removing the old lock. The broader upstream runner suite includes a test requiring a live Docker daemon; a daemon-free builder cannot establish that suite passed.
+
+## Guest image and firmware
+
+`assets/guest-images.json` owns the Debian cloud image release, architecture-specific SHA512 checksums and helper-image digest. Use the dated directories and published `SHA512SUMS` at its Debian `baseUrl`; never replace the dated pin with `latest`. Verify the downloaded bytes for each architecture. Guest firmware comes from Debian's `qemu-efi-aarch64` package in the runtime image.
+
+The prepared cache fingerprint includes the image metadata, host architecture, cloud-init template, public OS root certificate and preparation/VM helpers. Provisioning changes rebuild the cache at the next virtualized start. To refresh guest packages without changing the cloud release, make the preparation input change explicit rather than mutating a cached disk by hand.
+
+The guest kernel must support virtio-mem and Linux's `auto-movable` hotplug policy. Configure its movable-to-kernel ratio before plain `online` automatic onlining and before Docker readiness. Never force all hotplugged blocks to `online_movable`: a large guest can OOM on kernel allocations while gigabytes remain free. Test a large pool with kernel allocation pressure and inspect `/proc/zoneinfo` to verify kernel zones grow. A small 1.4 GiB pool does not expose the same imbalance as a 7 GiB pool. Verify actual QMP device-size acknowledgement for both growth and shrink, not just a successful requested-size command. Initial expansion stays zero until the zoning policy is configured and Docker is ready. Never grant reclaimed memory to a second guest before shrink acknowledgement. Verify broker recovery after a memory-admission wait longer than its reconnect window; repeated outages must each receive a fresh recovery window.
+
+Verify a first preparation with its image check loading, preparation failure/death reporting failure, a cache-hit restart, idle job checks successful and assigned jobs loading with controller readiness intact, zero idle guests, distinct consecutive guest boots, a lone job borrowing the pool, concurrent redistribution, and a job that uses a foreign-architecture image. An ARM64 firmware boot under TCG validates image/firmware wiring, not native ARM64 KVM execution; report that distinction when native hardware is unavailable. The production launcher always requests KVM and never falls back to TCG.
+
+## User-mode QEMU
 
 The `binfmt` build stage pins `tonistiigi/binfmt` by multi-architecture index digest. To refresh it alongside a package update, inspect `docker buildx imagetools inspect tonistiigi/binfmt:latest`, verify x86_64 and aarch64 manifests, and replace the digest in `Dockerfile`. Verify a foreign-architecture container and an emulated image build on StartOS; a successful registration command alone does not prove the interpreter remains registered after that process exits.
