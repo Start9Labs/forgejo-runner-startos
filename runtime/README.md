@@ -1,6 +1,6 @@
 # Shared CI runner runtime
 
-This module and the scripts in `runtime/assets/` own the execution primitives shared by StartOS runner packages. Consumers pin this package through their npm lockfile. Import `runtime` directly: it has no package manifest, registration model or SDK instance dependency.
+This module and the scripts in `runtime/assets/` own the execution primitives shared by StartOS runner packages. Consumers pin this package through their npm lockfile. Import `runtime` directly: it has no package manifest, registration model or SDK instance dependency. Include `node_modules/forgejo-runner-startos/runtime/**/*.ts` in the consumer's `tsconfig.json` so NCC emits dependency TypeScript.
 
 ## Policy API
 
@@ -14,7 +14,7 @@ This module and the scripts in `runtime/assets/` own the execution primitives sh
 
 ## Controller protocol
 
-Copy `runtime/assets/` to `/usr/local/share/ci-runner/` in a fresh Debian trixie image and run its `install-runtime.sh` as root. It installs prerequisites, the unprivileged `app` user and the existing `/usr/local/bin`, `/usr/local/libexec` and guest-template paths. `guest-images.json` pins cloud images and the guest helper image.
+Copy `runtime/assets/` to `/usr/local/share/ci-runner/` in a fresh Debian trixie image and run its `install-runtime.sh` as root. It installs prerequisites, the unprivileged `app` user and the existing `/usr/local/bin`, `/usr/local/libexec` and guest-template paths. `guest-images.json` pins cloud images and the guest helper image. Preserve `assets/LICENSE` when distributing the runtime; npm omits the package root's submodule-relative license symlink.
 
 `vm-worker.sh` invokes `/usr/local/bin/entrypoint.sh one-job --wait` in a new process group. That package-specific adapter must wait for exactly one assignment and use `request-vm.sh` as its trusted host-side before-job hook. The hook must run with a live task reporter before Docker access. Normal completion returns after reporting and cleanup; registration rejection must remain observable by package health checks. The adapter owns runner-specific CLI, configuration and credentials, not the generic worker.
 
