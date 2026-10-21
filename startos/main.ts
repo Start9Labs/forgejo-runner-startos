@@ -424,6 +424,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
             ...env,
             ...memoryEnv,
             VM_SLOT: String(slot),
+            VM_GUEST_HOSTNAME: 'forgejo-job',
             RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
             RUNNER_CAPACITY: '1',
             RUNNER_EMULATION: String(store.emulation),
