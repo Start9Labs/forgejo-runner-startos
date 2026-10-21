@@ -1,5 +1,40 @@
 import { arch, cpus, totalmem } from 'os'
 
+export const BINFMT_IMAGE =
+  'tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
+export const VM_PREPARATION_STATUS = '/vm/preparation.status'
+export const VM_PREPARATION_PROBE = `read -r pid phase < ${VM_PREPARATION_STATUS}; case "$phase" in ready|failed) ;; loading) kill -0 "$pid"; grep -qF /usr/local/bin/prepare-vm.sh /proc/$pid/cmdline;; *) exit 1;; esac; printf '%s' "$phase"`
+export const VM_POOL_PROBE =
+  'pid=$(cat /pool/manager.pid); kill -0 "$pid"; grep -qF /usr/local/bin/vm-pool.py /proc/$pid/cmdline; python3 -B /usr/local/bin/vm-pool.py status'
+
+/** Preparation remains loading until its completion marker is published. */
+export function vmPreparationState(exitCode: number | null, phase: string) {
+  return exitCode !== 0 || phase === 'failed'
+    ? ({
+        result: 'failure',
+        message: 'Guest VM image preparation failed',
+      } as const)
+    : phase === 'ready'
+      ? ({ result: 'success', message: 'Guest VM image is prepared' } as const)
+      : ({
+          result: 'loading',
+          message: 'Downloading and installing the guest VM image',
+        } as const)
+}
+
+/** Reports the broker independently of worker readiness. */
+export function vmPoolState(exitCode: number | null) {
+  return exitCode === 0
+    ? ({
+        result: 'success',
+        message: 'Shared guest-memory controller is running',
+      } as const)
+    : ({
+        result: 'failure',
+        message: 'Guest-memory controller is not running',
+      } as const)
+}
+
 export const EMULATION_IMAGE = 'ghcr.io/catthehacker/ubuntu:act-22.04'
 export const DEFAULT_RUNNER_LABELS = `ubuntu-latest:docker://${EMULATION_IMAGE}`
 export const ROOT_CA_PATH =

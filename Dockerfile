@@ -1,4 +1,4 @@
-ARG BINFMT_IMAGE=tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+ARG BINFMT_IMAGE
 FROM --platform=$BUILDPLATFORM golang:1.26.8-trixie AS runner
 WORKDIR /src
 COPY upstream/ ./

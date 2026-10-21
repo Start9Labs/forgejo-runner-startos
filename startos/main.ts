@@ -1,5 +1,13 @@
 import { cpus, totalmem } from 'os'
-import { vmJobProbe, vmJobState } from '../runtime'
+import {
+  VM_PREPARATION_STATUS,
+  VM_PREPARATION_PROBE,
+  VM_POOL_PROBE,
+  vmJobProbe,
+  vmJobState,
+  vmPreparationState,
+  vmPoolState,
+} from '../runtime'
 import {
   mainHostId as forgejoHostId,
   uiPort,
@@ -251,7 +259,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     'vm-image-preparation',
   )
   await installRootCa(preparer, rootCa)
-  const preparationStatusPath = '/vm/preparation.status'
+  const preparationStatusPath = VM_PREPARATION_STATUS
   await preparer.execFail(['rm', '-f', preparationStatusPath], {
     user: 'root',
   })
@@ -306,29 +314,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
         }),
         fn: async () => {
           const status = await preparer.exec(
-            [
-              'sh',
-              '-ec',
-              `read -r pid phase < ${preparationStatusPath}; case "$phase" in ready|failed) ;; loading) kill -0 "$pid"; grep -qF /usr/local/bin/prepare-vm.sh /proc/$pid/cmdline;; *) exit 1;; esac; printf '%s' "$phase"`,
-            ],
+            ['sh', '-ec', VM_PREPARATION_PROBE],
             { user: 'root', timeout: 5000 },
           )
           const phase = String(status.stdout).trim()
-          if (status.exitCode !== 0 || phase === 'failed') {
-            return {
-              result: 'failure',
-              message: i18n('Guest VM image preparation failed'),
-            }
-          }
-          return phase === 'ready'
-            ? {
-                result: 'success',
-                message: i18n('Guest VM image is prepared'),
-              }
-            : {
-                result: 'loading',
-                message: i18n('Downloading and installing the guest VM image'),
-              }
+          const health = vmPreparationState(status.exitCode, phase)
+          return { ...health, message: i18n(health.message) }
         },
       },
       requires: [],
@@ -343,21 +334,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ready: {
         display: i18n('Guest Memory Pool'),
         fn: async () => {
-          const status = await memoryPool.exec(
-            [
-              'sh',
-              '-ec',
-              'pid=$(cat /pool/manager.pid); kill -0 "$pid"; grep -qF /usr/local/bin/vm-pool.py /proc/$pid/cmdline; python3 -B /usr/local/bin/vm-pool.py status',
-            ],
-            { user: 'root', timeout: 10000 },
-          )
-          return {
-            result: status.exitCode === 0 ? 'success' : 'failure',
-            message:
-              status.exitCode === 0
-                ? i18n('Shared guest-memory controller is running')
-                : i18n('Guest-memory controller is not running'),
-          }
+          const status = await memoryPool.exec(['sh', '-ec', VM_POOL_PROBE], {
+            user: 'root',
+            timeout: 10000,
+          })
+          const health = vmPoolState(status.exitCode)
+          return { ...health, message: i18n(health.message) }
         },
       },
       requires: ['prepare-vm'],

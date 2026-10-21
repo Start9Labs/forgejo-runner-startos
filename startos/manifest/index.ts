@@ -1,5 +1,6 @@
 import { setupManifest } from '@start9labs/start-sdk'
 import { long, short } from './i18n'
+import { BINFMT_IMAGE } from '../../runtime'
 
 export const manifest = setupManifest({
   id: 'forgejo-runner',
@@ -13,7 +14,7 @@ export const manifest = setupManifest({
   volumes: ['main', 'scratch'],
   images: {
     main: {
-      source: { dockerBuild: { workdir: '.' } },
+      source: { dockerBuild: { workdir: '.', buildArgs: { BINFMT_IMAGE } } },
       arch: ['x86_64', 'aarch64'],
       emulateMissing: false,
     },

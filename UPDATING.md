@@ -24,4 +24,4 @@ Verify a first preparation with its image check loading, preparation failure/dea
 
 ## User-mode QEMU
 
-The `binfmt` build stage pins `tonistiigi/binfmt` by multi-architecture index digest. To refresh it alongside a package update, inspect `docker buildx imagetools inspect tonistiigi/binfmt:latest`, verify x86_64 and aarch64 manifests, and replace the digest in `Dockerfile`. Verify a foreign-architecture container and an emulated image build on StartOS; a successful registration command alone does not prove the interpreter remains registered after that process exits.
+The `binfmt` build stage pins `tonistiigi/binfmt` by multi-architecture index digest. To refresh it alongside a package update, inspect `docker buildx imagetools inspect tonistiigi/binfmt:latest`, verify x86_64 and aarch64 manifests, and replace `BINFMT_IMAGE` in `runtime/index.ts`. The manifest passes that shared pin as a Docker build argument. Verify a foreign-architecture container and an emulated image build on StartOS; a successful registration command alone does not prove the interpreter remains registered after that process exits.
