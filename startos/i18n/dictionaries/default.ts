@@ -1,7 +1,7 @@
 export const DEFAULT_LANG = 'en_US'
 
 const dict = {
-  'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).': 0,
+  'This device does not meet the minimum requirements to run CI jobs (1.5 GiB of RAM and 2 CPU cores).': 0,
   'Store not found': 1,
   Runner: 2,
   'Runner is running': 3,
@@ -28,7 +28,7 @@ const dict = {
   'Runner labels must be unique.': 35,
   Virtualization: 36,
   'Run each job in a disposable VM with its own guest kernel. Container mode starts faster and uses less memory, but shares the StartOS kernel. VM failures do not switch to container mode.': 37,
-  'KVM hardware virtualization is unavailable on this device. Jobs run in containers that share the StartOS kernel.': 38,
+  'KVM is unavailable. Save with Virtualization off to explicitly use containers that share the StartOS kernel.': 38,
   'Saving stops active jobs and restarts the runner.': 39,
   'Use one persistent Forgejo runner registration. Ephemeral registrations are not supported.': 40,
   'Too many concurrent jobs: each VM needs at least 512 MiB of guest RAM.': 41,
@@ -48,6 +48,7 @@ const dict = {
   'Downloading and installing the guest VM image': 55,
   'Guest VM image is prepared': 56,
   'Guest VM image preparation failed': 57,
+  'Virtualization is enabled but KVM is unavailable. Restore KVM access and restart the service, or run Configure to explicitly select container mode.': 58,
 }
 
 export type I18nKey = keyof typeof dict

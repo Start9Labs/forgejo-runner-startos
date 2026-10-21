@@ -16,7 +16,7 @@ Forgejo must be running with Actions enabled.
 
 1. In Forgejo, open **Repository / Organization / Site Settings → Actions → Runners → Create new Runner**. Create a **persistent**, not ephemeral, registration and copy its UUID and token. Prefer repository scope unless every repository in a broader scope is trusted.
 2. Complete **Configure** here. Enter those credentials and choose labels and concurrency. The default label is `ubuntu-latest`.
-3. Leave **Virtualization** enabled for the guest-kernel boundary. If KVM is unavailable, the switch is off and disabled with an explanation; you can still use container mode.
+3. Leave **Virtualization** enabled for the guest-kernel boundary. Without accessible KVM, new configurations default to container mode and the switch is disabled with an explanation.
 4. Start the service. First-time VM preparation can take several minutes and needs internet access. **VM Image Preparation** reports **Loading** during download and installation. Once prepared, the registration appears online in Forgejo. **Virtualized Jobs** checks show **Success** when idle and **Loading** while preparing or running a job.
 
 A workflow can select the default label with:
@@ -29,7 +29,7 @@ runs-on: ubuntu-latest
 
 ## Choosing execution mode
 
-**Virtualization** adds a guest-kernel boundary and discards each job's VM afterward. Jobs wait for their VM to boot; idle slots use only the host-side controller. Active guests share one memory budget: a lone job can borrow more RAM, and memory is redistributed when another job arrives or finishes. VM startup or runtime failures are reported; they never silently switch to containers.
+**Virtualization** adds a guest-kernel boundary and discards each job's VM afterward. Jobs wait for their VM to boot; idle slots use only the host-side controller. Active guests share one memory budget: a lone job can borrow more RAM, and memory is redistributed when another job arrives or finishes. VM startup or runtime failures are reported; they never silently switch to containers. If KVM becomes unavailable while Virtualization is saved as enabled, a critical Configure task blocks the runner from serving jobs. Restore KVM access and restart the service, or save Configure with Virtualization off to explicitly permit container mode. Registration is preserved.
 
 **Container mode** starts faster and uses less memory, but jobs run privileged containers with access to their engine and share the StartOS kernel. Use it only for trusted workflows.
 

@@ -4,6 +4,7 @@ import { i18n } from '../i18n'
 import { sdk } from '../sdk'
 import {
   runnerLabels,
+  runnerBackend,
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
@@ -21,7 +22,12 @@ export const watchConfiguration = sdk.setupOnInit(async (effects) => {
   }
   try {
     runnerLabels(store)
-    if (store.virtualization && (await virtualizationAvailable(effects))) {
+    if (
+      runnerBackend(
+        store.virtualization,
+        await virtualizationAvailable(effects),
+      ) === 'vm'
+    ) {
       vmResources(store.capacity)
       await vmDiskSize(effects, store.capacity)
     }
@@ -30,5 +36,7 @@ export const watchConfiguration = sdk.setupOnInit(async (effects) => {
     await sdk.action.createOwnTask(effects, configure, 'critical', {
       reason: error.message,
     })
+    return
   }
+  await sdk.action.clearTask(effects, `${sdk.manifest.id}:${configure.id}`)
 })

@@ -23,6 +23,7 @@ import {
   MIN_MEMORY_BYTES,
   RUNTIME_DIR,
   runnerLabels,
+  runnerBackend,
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
@@ -35,7 +36,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (totalmem() < MIN_MEMORY_BYTES || cpus().length < MIN_CPU_CORES) {
     throw new Error(
       i18n(
-        'This device does not meet the minimum requirements to run CI jobs (4 GB of RAM and 2 CPU cores).',
+        'This device does not meet the minimum requirements to run CI jobs (1.5 GiB of RAM and 2 CPU cores).',
       ),
     )
   }
@@ -56,6 +57,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
       ),
     )
   const available = await virtualizationAvailable(effects)
+  const backend = runnerBackend(store.virtualization, available)
   const rootCa = await sdk.getRootCa(effects)
   const osIp = await sdk.getOsIp(effects)
   const localHosts = await sdk.host
@@ -83,7 +85,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     RUNNER_ROOT_CA: ROOT_CA_PATH,
     RUNNER_LOCAL_HOSTS: JSON.stringify(localHosts),
   }
-  if (!store.virtualization || !available) {
+  if (backend === 'container') {
     const controllerPath = './controller/container'
     const engine = sdk.SubContainer.of(
       effects,

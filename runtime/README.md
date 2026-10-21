@@ -7,6 +7,7 @@ This module and the scripts in `runtime/assets/` own the execution primitives sh
 - `guestResources` computes the aggregate guest-memory budget, boot floor, hotplug blocks and CPU share. `null` means the requested capacity cannot fit. Callers translate their own configuration error.
 - `guestDiskGiB` computes each guest's bounded disk size from available scratch MiB and capacity. Zero means insufficient or invalid input.
 - `resolveRunnerLabels` validates Docker-only, unique labels and adds an explicitly targeted foreign-architecture label when emulation is enabled. Its error strings are translation keys, not permission to fall back to host execution.
+- `resolveRunnerBackend` preserves the saved kernel-isolation choice. Enabled virtualization without accessible KVM returns a translation-key error, never container mode. Use it in startup, configuration validation and the critical-task watcher; container mode requires a saved explicit off choice.
 - `installRootCa` consumes the public certificate from `sdk.getRootCa`; private-key bundles and service leaf certificates are not inputs.
 - `installLocalHosts` applies the SDK-derived hostname/IP aliases to each controller/engine rootfs. Docker `--add-host` affects jobs, not controller-side action clones; install aliases in both places. It replaces only its marked lines.
 - `BINFMT_IMAGE` pins the host helper. Pass it as the `BINFMT_IMAGE` Docker build argument; the package manifest supplies it for normal builds.

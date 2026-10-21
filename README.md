@@ -41,7 +41,7 @@ In container mode, `container-engine` runs rootful Docker within the StartOS ser
 | `vm-image-preparation` | Download, verify and prepare the guest base |
 | `vm-memory-pool` | Admit guests and redistribute a single RAM budget |
 | `vm-worker-N` | Host-side controller and hypervisor for slot N, starting at zero |
-| `container-engine` | Docker engine when virtualization is off or unavailable |
+| `container-engine` | Docker engine when virtualization is explicitly off |
 | `runner-controller` | One multi-job controller in container mode |
 
 ## Volume and Data Layout
@@ -90,7 +90,7 @@ Container mode uses bridge `runner` at `172.18.0.1/24`, with job networks from `
 
 ## Installation and First-Run Flow
 
-Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. A missing or inaccessible device forces container mode; an actual VM startup failure does not.
+Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. New settings default to container mode without accessible KVM. If virtualization is already enabled and KVM becomes unavailable, a critical Configure task blocks startup and main refuses to create either backend. Restore KVM access and restart, or explicitly save Configure with Virtualization off to use containers. The saved choice and registration are not automatically changed; the task clears when the selected backend is usable. VM startup failures also never select container mode.
 
 The hardware floor is two CPU cores and the four-gigabyte memory class. Half the service-visible RAM, rounded down to 128 MiB blocks, forms one guest-memory pool. Configured concurrency must fit a 512 MiB boot floor per simultaneous guest. A lone active job may use the whole pool; new assignments divide fair targets among active and waiting jobs. Idle slots have no VM or guest-memory commitment.
 

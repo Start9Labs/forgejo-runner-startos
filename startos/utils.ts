@@ -6,6 +6,7 @@ import {
   guestDiskGiB,
   guestResources,
   resolveRunnerLabels,
+  resolveRunnerBackend,
 } from '../runtime'
 
 export {
@@ -46,6 +47,12 @@ export const mount = sdk.Mounts.of()
     mountpoint: SCRATCH_DIR,
     readonly: false,
   })
+
+export function runnerBackend(virtualization: boolean, available: boolean) {
+  const resolved = resolveRunnerBackend(virtualization, available)
+  if (resolved.error) throw new Error(i18n(resolved.error))
+  return resolved.backend
+}
 
 export async function virtualizationAvailable(
   effects: Parameters<typeof sdk.SubContainer.of>[0],

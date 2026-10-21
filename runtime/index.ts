@@ -42,6 +42,21 @@ export const ROOT_CA_PATH =
   '/usr/local/share/ca-certificates/startos-root-ca.crt'
 export const KVM_PROBE = 'test -c /dev/kvm && exec 3<>/dev/kvm'
 
+/** Requires an explicit container choice when KVM is unavailable. */
+export function resolveRunnerBackend(
+  virtualization: boolean,
+  available: boolean,
+) {
+  if (!virtualization) return { backend: 'container' } as const
+  if (!available) {
+    return {
+      error:
+        'Virtualization is enabled but KVM is unavailable. Restore KVM access and restart the service, or run Configure to explicitly select container mode.',
+    } as const
+  }
+  return { backend: 'vm' } as const
+}
+
 /** Consumes sdk.getRootCa output, never a private-key bundle. */
 export async function installRootCa(
   subcontainer: {
