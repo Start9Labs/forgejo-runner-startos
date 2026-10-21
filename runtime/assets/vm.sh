@@ -46,7 +46,7 @@ vm_boot() {
     -e "s|@TLS_SERVER_CERT@|$(base64 -w0 /data/tls/server/cert.pem)|g" \
     -e "s|@TLS_SERVER_KEY@|$(base64 -w0 /data/tls/server/key.pem)|g" \
     "$template" > /vm/seed-input/user-data
-  printf 'instance-id: runner-%s\nlocal-hostname: forgejo-job\n' "$(cat /proc/sys/kernel/random/uuid)" > /vm/seed-input/meta-data
+  printf 'instance-id: runner-%s\nlocal-hostname: %s\n' "$(cat /proc/sys/kernel/random/uuid)" "${VM_GUEST_HOSTNAME:-runner-job}" > /vm/seed-input/meta-data
   genisoimage -quiet -output /vm/seed.iso -volid cidata -joliet -rock /vm/seed-input/user-data /vm/seed-input/meta-data
   local -a machine
   case "$(vm_arch)" in

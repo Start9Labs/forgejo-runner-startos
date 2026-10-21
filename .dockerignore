@@ -6,3 +6,5 @@ javascript
 ncc-cache
 docker-images
 *.s9pk
+**/__pycache__
+**/*.pyc

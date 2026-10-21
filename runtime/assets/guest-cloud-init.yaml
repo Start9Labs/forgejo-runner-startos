@@ -1,5 +1,5 @@
 #cloud-config
-hostname: forgejo-job
+hostname: runner-job
 manage_etc_hosts: true
 disable_root: true
 ssh_pwauth: false

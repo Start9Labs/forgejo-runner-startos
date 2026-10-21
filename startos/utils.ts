@@ -1,28 +1,28 @@
-import { arch, cpus, totalmem } from 'os'
 import { sdk } from './sdk'
 import { i18n } from './i18n'
+import {
+  DEFAULT_RUNNER_LABELS,
+  KVM_PROBE,
+  guestDiskGiB,
+  guestResources,
+  resolveRunnerLabels,
+} from '../runtime'
+
+export {
+  DEFAULT_RUNNER_LABELS,
+  EMULATION_IMAGE,
+  ROOT_CA_PATH,
+  installRootCa,
+} from '../runtime'
 
 // Means a 4 GB device: StartOS reserves 1 GiB before reporting service RAM.
 export const MIN_MEMORY_BYTES = 1.5 * 1024 ** 3
 export const MIN_CPU_CORES = 2
-export const EMULATION_IMAGE = 'ghcr.io/catthehacker/ubuntu:act-22.04'
-export const DEFAULT_RUNNER_LABELS = `ubuntu-latest:docker://${EMULATION_IMAGE}`
 export const DATA_DIR = '/data'
 export const SCRATCH_DIR = '/scratch'
 export const JOB_SCRATCH_DIR = `${SCRATCH_DIR}/jobs`
 export const RUNTIME_DIR = `${SCRATCH_DIR}/run`
 export const DOCKER_HOST = `unix://${RUNTIME_DIR}/docker.sock`
-export const ROOT_CA_PATH =
-  '/usr/local/share/ca-certificates/startos-root-ca.crt'
-
-export async function installRootCa(
-  subcontainer: ReturnType<typeof sdk.SubContainer.of>,
-  rootCa: string,
-) {
-  await subcontainer.writeFile(ROOT_CA_PATH, rootCa, { mode: 0o644 })
-  await subcontainer.execFail(['update-ca-certificates'], { user: 'root' })
-}
-
 export type RunnerSettings = {
   runnerUuid: string
   runnerToken: string
@@ -55,7 +55,7 @@ export async function virtualizationAvailable(
     sdk.Mounts.of(),
     'virtualization-availability',
     (subcontainer) =>
-      subcontainer.exec(['sh', '-ec', 'test -c /dev/kvm && exec 3<>/dev/kvm'], {
+      subcontainer.exec(['sh', '-ec', KVM_PROBE], {
         user: 'root',
         timeout: 5000,
       }),
@@ -86,11 +86,8 @@ export async function vmDiskSize(
   const availableMiB = Number(
     String(result.stdout).trim().split('\n')[1]?.trim().split(/\s+/)[3],
   )
-  const diskGiB = Math.min(
-    32,
-    Math.floor((availableMiB * 0.5) / capacity / 1024),
-  )
-  if (!Number.isFinite(diskGiB) || diskGiB < 8) {
+  const diskGiB = guestDiskGiB(availableMiB, capacity)
+  if (!diskGiB) {
     throw new Error(
       i18n(
         'Insufficient scratch space: each VM needs at least 8 GiB of disk space within the guest-disk budget.',
@@ -101,52 +98,21 @@ export async function vmDiskSize(
 }
 
 export function vmResources(capacity: number) {
-  const bootMemoryMiB = 512
-  const blockMemoryMiB = 128
-  const memoryMiB =
-    Math.floor((totalmem() * 0.5) / 1024 ** 2 / blockMemoryMiB) * blockMemoryMiB
-  if (memoryMiB < capacity * bootMemoryMiB) {
+  const resources = guestResources(capacity)
+  if (!resources) {
     throw new Error(
       i18n(
         'Too many concurrent jobs: each VM needs at least 512 MiB of guest RAM.',
       ),
     )
   }
-  return {
-    cpuCores: Math.max(1, Math.floor(cpus().length / capacity)),
-    memoryMiB,
-    bootMemoryMiB,
-    blockMemoryMiB,
-    memoryDeviceId: 'job-memory',
-  }
+  return resources
 }
 
 export function runnerLabels(settings: RunnerSettings) {
-  const labels = settings.labels
-    .split(',')
-    .map((label) => label.trim())
-    .filter(Boolean)
-  if (
-    !labels.length ||
-    labels.some((label) => !/^[^\s:,]+:docker:\/\/\S+$/.test(label))
-  ) {
-    throw new Error(
-      i18n(
-        'Runner labels must use name:docker://image. Host labels are not allowed.',
-      ),
-    )
-  }
-  if (settings.emulation) {
-    const foreignArch = arch() === 'arm64' ? 'amd64' : 'arm64'
-    labels.push(
-      `linux-${foreignArch}:docker://${EMULATION_IMAGE}?platform=linux/${foreignArch}`,
-    )
-  }
-  const names = labels.map((label) => label.split(':', 1)[0].toLowerCase())
-  if (new Set(names).size !== labels.length) {
-    throw new Error(i18n('Runner labels must be unique.'))
-  }
-  return labels
+  const resolved = resolveRunnerLabels(settings)
+  if (resolved.error) throw new Error(i18n(resolved.error))
+  return resolved.labels
 }
 
 export function runnerInput() {

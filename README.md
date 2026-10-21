@@ -134,6 +134,10 @@ A restored service must still have Forgejo and a recognized persistent registrat
 6. Guest memory grants and disks are bounded, but CPU, networking and the StartOS host remain shared resources. A job waiting for memory has already been assigned in Forgejo; its logs report provisioning while the shared pool waits for reclamation. Busy or pinned memory can delay another job until an active guest finishes.
 7. Foreign-architecture labels use slower user-mode emulation inside the selected execution environment; native workers are preferable for regular builds.
 
+## Shared Runtime Maintenance
+
+`runtime/` owns the generic VM/engine scripts, resource and label policy, public-CA installation, and VM phase/liveness checks used by sibling runner packages. Its [integration contract](runtime/README.md) separates those primitives from this package's Forgejo registration and CLI adapter. Runtime assets install at their existing image paths; changing their source directory does not change persistent data or guest isolation.
+
 ## Quick Reference for AI Consumers
 
 ```yaml

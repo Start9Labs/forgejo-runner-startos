@@ -1,4 +1,5 @@
 import { cpus, totalmem } from 'os'
+import { vmJobProbe, vmJobState } from '../runtime'
 import {
   mainHostId as forgejoHostId,
   uiPort,
@@ -406,32 +407,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
         } as const
       }
       const status = await guest.exec(
-        [
-          'sh',
-          '-ec',
-          `controller=$(cat /vm/controller.pid); kill -0 "$controller"; grep -qF /usr/local/bin/vm-worker.sh /proc/$controller/cmdline; case "$(cat /vm/phase)" in idle) if grep -qx forgejo-runner /proc/[0-9]*/comm; then echo idle; else echo starting; fi;; budget|booting|recycling) echo starting;; ready) kill -0 "$(cat /vm/qemu.pid)"; grep -qx forgejo-runner /proc/[0-9]*/comm; curl -fsS --max-time 4 --cacert /data/tls/client/ca.pem --cert /data/tls/client/cert.pem --key /data/tls/client/key.pem https://127.0.0.1:${port}/_ping >/dev/null; echo ready;; *) exit 1;; esac`,
-        ],
+        ['sh', '-ec', vmJobProbe(port, 'forgejo-runner')],
         { user: 'root', timeout: 5000 },
       )
       const phase = String(status.stdout).trim()
-      return {
-        result:
-          status.exitCode !== 0
-            ? 'failure'
-            : phase === 'idle'
-              ? 'success'
-              : phase === 'starting'
-                ? 'starting'
-                : 'loading',
-        message:
-          status.exitCode === 0
-            ? phase === 'idle'
-              ? i18n('Ready for a job; no VM allocated')
-              : phase === 'starting'
-                ? i18n('Preparing a disposable VM')
-                : i18n('Running a job')
-            : i18n('Virtualized job slot is not running'),
-      } as const
+      const health = vmJobState(status.exitCode, phase)
+      return { ...health, message: i18n(health.message) }
     }
     daemons = daemons
       .addDaemon(`worker-${slot}`, {
