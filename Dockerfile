@@ -23,6 +23,11 @@ RUN mkdir -p /usr/local/share && printf '%s\n' "$BINFMT_IMAGE" > /usr/local/shar
 
 COPY runtime/assets/install-runtime.sh /usr/local/share/ci-runner/install-runtime.sh
 RUN sh /usr/local/share/ci-runner/install-runtime.sh
+# The base image's CA store is only as current as its last release.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --only-upgrade ca-certificates \
+ && rm -rf /var/lib/apt/lists/* \
+ && ! grep -q MIICTjCCAdOgAwIBAgIKPPYHqWhwDtqLhDAKBggqhkjOPQQDAzBr /etc/ssl/certs/ca-certificates.crt
 COPY runtime/assets/ /usr/local/share/ci-runner/
 
 COPY --from=runner /bin/forgejo-runner /usr/local/bin/forgejo-runner
