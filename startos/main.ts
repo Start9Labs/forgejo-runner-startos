@@ -8,10 +8,6 @@ import {
   vmPreparationState,
   vmPoolState,
 } from '../runtime'
-import {
-  mainHostId as forgejoHostId,
-  uiPort,
-} from 'forgejo-startos/startos/utils'
 import { sdk } from './sdk'
 import { i18n } from './i18n'
 import { storeJson } from './fileModels/store.json'
@@ -29,6 +25,7 @@ import {
   vmDiskSize,
   installRootCa,
   installLocalHosts,
+  forgejoConnection,
   ROOT_CA_PATH,
 } from './utils'
 
@@ -42,41 +39,12 @@ export const main = sdk.setupMain(async ({ effects }) => {
   }
   const store = await storeJson.read().const(effects)
   if (!store) throw new Error(i18n('Store not found'))
-  const forgeBridge = await sdk.host
-    .getBridgeAddress(effects, {
-      packageId: 'forgejo',
-      hostId: forgejoHostId,
-      internalPort: uiPort,
-      ssl: false,
-    })
-    .const()
-  if (!forgeBridge)
-    throw new Error(
-      i18n(
-        'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
-      ),
-    )
+  const { url, localHosts } = await forgejoConnection(effects, store.remoteUrl)
   const available = await virtualizationAvailable(effects)
   const backend = runnerBackend(store.virtualization, available)
   const rootCa = await sdk.getRootCa(effects)
-  const osIp = await sdk.getOsIp(effects)
-  const localHosts = await sdk.host
-    .get(effects, { packageId: 'forgejo', hostId: forgejoHostId }, (host) =>
-      [
-        ...new Set(
-          Object.values(host?.bindings[uiPort]?.interfaces ?? {})
-            .flatMap((iface) =>
-              iface.addressInfo
-                .filter({ kind: 'mdns' })
-                .format('hostname-info'),
-            )
-            .map((address) => `${address.hostname}:${osIp}`),
-        ),
-      ].sort(),
-    )
-    .const()
   const env = {
-    INSTANCE_URL: `http://${forgeBridge}`,
+    INSTANCE_URL: url,
     RUNNER_UUID: store.runnerUuid,
     RUNNER_TOKEN: store.runnerToken,
     RUNNER_LABELS: runnerLabels(store).join(','),

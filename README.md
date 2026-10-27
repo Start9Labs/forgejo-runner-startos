@@ -9,7 +9,7 @@
 > upstream documentation is accurate and fully applicable — see the
 > Documentation section of `instructions.md` for links.
 
-[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes workflows for the Forgejo on this device. One persistent registration serves all execution slots.
+[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes workflows for the Forgejo on this device, or for a Forgejo on another server. One persistent registration serves all execution slots.
 
 ## Table of Contents
 
@@ -36,37 +36,37 @@ The first virtualized start downloads a checksum-pinned Debian cloud image and p
 
 In container mode, `container-engine` runs rootful Docker within the StartOS service. `runner-controller` has its own filesystem and persistent controller state. Jobs receive privileged containers, the service-local engine socket and scratch; they share the StartOS kernel and can control that engine's other jobs. This is not VM isolation. Docker uses fuse-overlayfs, retained namespace-local binfmt registration, and `runc-nested` to remove the unsupported nested sysctl.
 
-| Subcontainer | Purpose |
-| --- | --- |
-| `vm-image-preparation` | Download, verify and prepare the guest base |
-| `vm-memory-pool` | Admit guests and redistribute a single RAM budget |
-| `vm-worker-N` | Host-side controller and hypervisor for slot N, starting at zero |
-| `container-engine` | Docker engine when virtualization is explicitly off |
-| `runner-controller` | One multi-job controller in container mode |
+| Subcontainer           | Purpose                                                          |
+| ---------------------- | ---------------------------------------------------------------- |
+| `vm-image-preparation` | Download, verify and prepare the guest base                      |
+| `vm-memory-pool`       | Admit guests and redistribute a single RAM budget                |
+| `vm-worker-N`          | Host-side controller and hypervisor for slot N, starting at zero |
+| `container-engine`     | Docker engine when virtualization is explicitly off              |
+| `runner-controller`    | One multi-job controller in container mode                       |
 
 ## Volume and Data Layout
 
 Persistent configuration and controller state are separate from reconstructible images and job scratch. Neither execution engine mounts the central settings file.
 
-| Volume path | Mount | Contents |
-| --- | --- | --- |
-| `main/store.json` | File-model access only | Registration and execution settings |
-| `main/controller/workers/N` | `/data` in VM worker N | Generated runner configuration, logs, rejection marker, active client TLS keys |
-| `main/controller/container` | `/data` in container controller | Generated runner configuration, logs and rejection marker |
-| `scratch/vm-images` | `/cache` in preparation; read-only `/base` in workers | Verified cloud image and prepared base |
-| `scratch/vm-preparation/runtime` | `/vm` in preparation | Temporary preparation disk and seed |
-| `scratch/vm-preparation/control` | `/data` in preparation | Temporary TLS and provisioning state |
-| `scratch/vm-workers/N` | `/vm` in worker N; read-only `/workers/N` in memory manager | Disposable disk, seed, serial log, QMP socket and lease identity |
-| `scratch/vm-pool` | `/pool` in manager and workers | Host-only control socket and recoverable memory reservations |
-| `scratch/container` | `/scratch` in container engine/controller | Persistent image layers, nested build scratch and transient sockets |
+| Volume path                      | Mount                                                       | Contents                                                                       |
+| -------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `main/store.json`                | File-model access only                                      | Registration and execution settings                                            |
+| `main/controller/workers/N`      | `/data` in VM worker N                                      | Generated runner configuration, logs, rejection marker, active client TLS keys |
+| `main/controller/container`      | `/data` in container controller                             | Generated runner configuration, logs and rejection marker                      |
+| `scratch/vm-images`              | `/cache` in preparation; read-only `/base` in workers       | Verified cloud image and prepared base                                         |
+| `scratch/vm-preparation/runtime` | `/vm` in preparation                                        | Temporary preparation disk and seed                                            |
+| `scratch/vm-preparation/control` | `/data` in preparation                                      | Temporary TLS and provisioning state                                           |
+| `scratch/vm-workers/N`           | `/vm` in worker N; read-only `/workers/N` in memory manager | Disposable disk, seed, serial log, QMP socket and lease identity               |
+| `scratch/vm-pool`                | `/pool` in manager and workers                              | Host-only control socket and recoverable memory reservations                   |
+| `scratch/container`              | `/scratch` in container engine/controller                   | Persistent image layers, nested build scratch and transient sockets            |
 
 VM jobs bind guest-local `/var/lib/runner-scratch` at `/root/setup-docker-action`, plus the guest resolver and Unix Docker socket. Container jobs use `/scratch/jobs` from the engine filesystem instead. These keep nested Docker storage off layered job roots. A workflow selecting a different nested-daemon directory needs an equivalent scratch arrangement.
 
 ## File Models
 
-`store.json` is a loose JSON model seeded by merging defaults. It owns `runnerUuid`, `runnerToken`, `labels`, `capacity`, `emulation` and `virtualization`; unmodeled keys survive writes. The configuration action updates these values, and reactive reads restart execution when they change.
+`store.json` is a loose JSON model seeded by merging defaults. It owns `runnerUuid`, `runnerToken`, `remoteUrl`, `labels`, `capacity`, `emulation` and `virtualization`; unmodeled keys survive writes. The configuration action updates these values, and reactive reads restart execution when they change.
 
-Each controller regenerates `/data/runner/config.yaml` at launch from settings and the resolved Forgejo address. Hand edits do not survive. Runner privilege policy, engine endpoint and mounts are package-controlled. Controller Docker clients use an empty registry-auth configuration; job-provided credentials are distinct from controller credentials.
+`remoteUrl` is empty for the Forgejo on this server; otherwise it holds the remote address, stored without a trailing slash. Each controller regenerates `/data/runner/config.yaml` at launch from settings and the resolved Forgejo address. Hand edits do not survive. Runner privilege policy, engine endpoint and mounts are package-controlled. Controller Docker clients use an empty registry-auth configuration; job-provided credentials are distinct from controller credentials.
 
 Every assigned job gets a private controller-side action-source cache, removed when execution returns. Actions can reuse fetched sources within that job but are fetched separately for subsequent jobs in both modes. Abandoned Git locks in an older cache cannot block a new job; the runner does not delete lock files from another job's cache.
 
@@ -74,15 +74,15 @@ A controller's `runner/rejected-uuid` records a registration Forgejo no longer r
 
 ## Dependencies
 
-Forgejo is required, must be running and pass its primary health check, and must have Actions enabled. The runner resolves its bridge address reactively; remote Forgejo instances are not configurable. No Forgejo volume is mounted.
+Forgejo is an optional dependency, enabled while **Forgejo Instance** is **This server**. Then it must be running, pass its primary health check and have Actions enabled, and the runner resolves its bridge address reactively. With **Remote server** selected, the dependency and its Enable Actions task are inactive, and the runner connects to the configured URL instead. No Forgejo volume is mounted.
 
 ## Network Access and Interfaces
 
-The package exposes no user-facing interfaces. Controllers dial Forgejo over its service bridge and fetch action repositories and images outbound.
+The package exposes no user-facing interfaces. Controllers dial a local Forgejo over its service bridge, or a remote Forgejo at its configured URL, and fetch action repositories and images outbound.
 
 Artifact uploads also use URLs signed by Forgejo under its configured Primary URL. The package installs the OS's public root certificate in controller and guest trust stores, then adds it to each workflow job container before actions run. Debian/Ubuntu/Alpine system stores use `update-ca-certificates`; images with `update-ca-trust` use that updater instead. Node actions also receive `NODE_EXTRA_CA_CERTS` pointing at the public certificate in their shared action volume. Images without a system trust updater retain Node's extra-certificate support but must provide their own system trust tooling for other clients.
 
-Forgejo's derived mDNS hostnames are mapped to the OS bridge in workflow job containers, preserving the requested hostname, SNI and certificate verification. Neither TLS verification nor hostname checks are disabled. Only the public CA is copied; controller registration credentials, OS private keys and per-VM Docker client keys stay outside guests. Custom Docker action images can read the shared public certificate through Node's extra-CA environment; their system trust tooling and DNS configuration remain the image/workflow's responsibility.
+For a local Forgejo, its derived mDNS hostnames are mapped to the OS bridge in workflow job containers, preserving the requested hostname, SNI and certificate verification. Neither TLS verification nor hostname checks are disabled. Only the public CA is copied; controller registration credentials, OS private keys and per-VM Docker client keys stay outside guests. Custom Docker action images can read the shared public certificate through Node's extra-CA environment; their system trust tooling and DNS configuration remain the image/workflow's responsibility.
 
 QEMU uses user networking. Each guest Docker API is forwarded to a distinct service-loopback port starting at 23750; image preparation uses 23650. Every guest gets a unique CA and server-only certificate. Client private keys and the CA signing key are never seeded into guests. Mutual TLS is required even on loopback: QEMU's guest host alias can reach the parent loopback namespace. There are no guest SSH forwards.
 
@@ -100,13 +100,13 @@ Disk limits divide half the free scratch space observed at startup, capped at 32
 
 ## Actions
 
-Use configuration to change registration, routing or execution policy. It rewrites the settings model and restarts execution, interrupting active work. Repeating identical settings is safe; there is no additional registration created per slot or job.
+Use configuration to choose the Forgejo instance and to change registration, routing or execution policy. It rewrites the settings model and restarts execution, interrupting active work. Repeating identical settings is safe; there is no additional registration created per slot or job.
 
 ## Tasks
 
 A critical configuration task blocks service startup while credentials are missing, labels are invalid, or the selected VM concurrency cannot fit its resource budget. Correcting the settings clears it. These conditions can recur after a restore or hardware/storage change.
 
-When Forgejo Actions is disabled, the dependency receives a task targeting its Configure action. Enabling Actions clears that dependency task.
+While the local Forgejo is selected and its Actions are disabled, the dependency receives a task targeting its Configure action. Enabling Actions clears that dependency task; selecting a remote Forgejo hides it.
 
 ## Health Checks
 
@@ -133,6 +133,7 @@ A restored service must still have Forgejo and a recognized persistent registrat
 5. Initial guest preparation needs outbound access to the pinned cloud image, Debian repositories and helper image. Failed preparation does not change execution mode.
 6. Guest memory grants and disks are bounded, but CPU, networking and the StartOS host remain shared resources. A job waiting for memory has already been assigned in Forgejo; its logs report provisioning while the shared pool waits for reclamation. Busy or pinned memory can delay another job until an active guest finishes.
 7. Foreign-architecture labels use slower user-mode emulation inside the selected execution environment; native workers are preferable for regular builds.
+8. A remote Forgejo must be reachable at its configured URL from this server and from job containers, and an HTTPS URL needs a publicly trusted certificate. Only the OS root CA of this server is added to trust stores, and no host mappings are added for a remote Forgejo, so a `.local` address or a certificate from another server's private CA fails. When the remote Forgejo is unreachable, the runner exits on `fail to invoke Declare` with the connection error, StartOS restarts it, and the execution health check reports it as not running.
 
 ## Shared Runtime Maintenance
 
@@ -144,7 +145,14 @@ A restored service must still have Forgejo and a recognized persistent registrat
 package_id: forgejo-runner
 image: ./Dockerfile
 architectures: [x86_64, aarch64]
-subcontainers: [vm-image-preparation, vm-memory-pool, vm-worker-N, container-engine, runner-controller]
+subcontainers:
+  [
+    vm-image-preparation,
+    vm-memory-pool,
+    vm-worker-N,
+    container-engine,
+    runner-controller,
+  ]
 volumes:
   main: /data
   scratch: /vm
@@ -174,11 +182,17 @@ startos_managed_env_vars:
   - RUNNER_BEFORE_JOB
   - VM_CPU_CORES
   - VM_DISK_GB
-dependencies: [forgejo]
+dependencies:
+  - { id: forgejo, optional: true, enabled_when: 'remoteUrl is empty' }
 interfaces: {}
 actions: [configure]
 tasks:
   - { action: configure, severity: critical }
-  - { package: forgejo, action: configure, severity: critical }
+  - {
+      package: forgejo,
+      action: configure,
+      severity: critical,
+      when: local Forgejo selected,
+    }
 health_checks: [memory-pool, worker-N, runner, execution-mode]
 ```

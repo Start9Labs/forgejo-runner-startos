@@ -1,3 +1,7 @@
+import {
+  mainHostId as forgejoHostId,
+  uiPort,
+} from 'forgejo-startos/startos/utils'
 import { sdk } from './sdk'
 import { i18n } from './i18n'
 import {
@@ -47,6 +51,49 @@ export const mount = sdk.Mounts.of()
     mountpoint: SCRATCH_DIR,
     readonly: false,
   })
+
+export function remoteForgejoUrl(url: string) {
+  return url.trim().replace(/\/+$/, '')
+}
+
+// Local hosts map Forgejo's mDNS names to the OS bridge in job containers.
+export async function forgejoConnection(
+  effects: Parameters<typeof sdk.SubContainer.of>[0],
+  remoteUrl: string,
+) {
+  if (remoteUrl) return { url: remoteUrl, localHosts: [] as string[] }
+  const bridge = await sdk.host
+    .getBridgeAddress(effects, {
+      packageId: 'forgejo',
+      hostId: forgejoHostId,
+      internalPort: uiPort,
+      ssl: false,
+    })
+    .const()
+  if (!bridge)
+    throw new Error(
+      i18n(
+        'Forgejo is not yet reachable on the internal network. The runner will connect once its Forgejo dependency is running.',
+      ),
+    )
+  const osIp = await sdk.getOsIp(effects)
+  const localHosts = await sdk.host
+    .get(effects, { packageId: 'forgejo', hostId: forgejoHostId }, (host) =>
+      [
+        ...new Set(
+          Object.values(host?.bindings[uiPort]?.interfaces ?? {})
+            .flatMap((iface) =>
+              iface.addressInfo
+                .filter({ kind: 'mdns' })
+                .format('hostname-info'),
+            )
+            .map((address) => `${address.hostname}:${osIp}`),
+        ),
+      ].sort(),
+    )
+    .const()
+  return { url: `http://${bridge}`, localHosts }
+}
 
 export function runnerBackend(virtualization: boolean, available: boolean) {
   const resolved = resolveRunnerBackend(virtualization, available)
@@ -124,8 +171,40 @@ export function runnerLabels(settings: RunnerSettings) {
 }
 
 export function runnerInput() {
-  const { Value } = sdk
+  const { Value, Variants, InputSpec } = sdk
   return {
+    forgejo: Value.union({
+      name: i18n('Forgejo Instance'),
+      description: i18n(
+        'The Forgejo this runner takes jobs from: the one installed on this server, or one running elsewhere.',
+      ),
+      default: 'local',
+      variants: Variants.of({
+        local: { name: i18n('This server'), spec: InputSpec.of({}) },
+        remote: {
+          name: i18n('Remote server'),
+          spec: InputSpec.of({
+            url: Value.text({
+              name: i18n('Forgejo URL'),
+              description: i18n(
+                'The address of the remote Forgejo, as its users open it, for example https://forge.example.com. An HTTPS address needs a publicly trusted certificate, and the address must be reachable from this server and from job containers.',
+              ),
+              required: true,
+              default: null,
+              inputmode: 'url',
+              patterns: [
+                {
+                  regex: '^https?://[^\\s"\'\\\\/?#]+(/[^\\s"\'\\\\?#]*)?$',
+                  description: i18n(
+                    'Must be an http:// or https:// address with no query or fragment',
+                  ),
+                },
+              ],
+            }),
+          }),
+        },
+      }),
+    }),
     runnerUuid: Value.text({
       name: i18n('Runner UUID'),
       description: i18n(

@@ -8,6 +8,7 @@ import {
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
+  remoteForgejoUrl,
 } from '../utils'
 
 export const configure = sdk.Action.withInput(
@@ -44,6 +45,9 @@ export const configure = sdk.Action.withInput(
     const store = await storeJson.read().once()
     if (!store) return null
     return {
+      forgejo: store.remoteUrl
+        ? { selection: 'remote' as const, value: { url: store.remoteUrl } }
+        : { selection: 'local' as const, value: {} },
       runnerUuid: store.runnerUuid || undefined,
       runnerToken: store.runnerToken || undefined,
       labels: store.labels,
@@ -53,7 +57,7 @@ export const configure = sdk.Action.withInput(
         (await virtualizationAvailable(effects)) && store.virtualization,
     }
   },
-  async ({ effects, input }) => {
+  async ({ effects, input: { forgejo, ...input } }) => {
     runnerLabels(input)
     if (
       runnerBackend(
@@ -64,7 +68,13 @@ export const configure = sdk.Action.withInput(
       vmResources(input.capacity)
       await vmDiskSize(effects, input.capacity)
     }
-    await storeJson.merge(effects, input)
+    await storeJson.merge(effects, {
+      ...input,
+      remoteUrl:
+        forgejo.selection === 'remote'
+          ? remoteForgejoUrl(forgejo.value.url)
+          : '',
+    })
     return {
       version: '1',
       title: i18n('Saved'),
