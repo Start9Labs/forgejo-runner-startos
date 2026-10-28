@@ -6,16 +6,16 @@
 
 ## What you get on StartOS
 
-You use one runner registration with the **Forgejo on this device**. Follow jobs and logs in Forgejo's **Actions** tab and check execution health here.
+You use one runner registration with the **Forgejo on this device** or a **Forgejo on another server**. Follow jobs and logs in Forgejo's **Actions** tab and check execution health here.
 
 With **Virtualization** enabled, each assigned job boots a fresh disposable VM, including jobs running at the same time. Idle slots keep no VM running. Turning virtualization off uses containers that share the StartOS kernel.
 
 ## Getting set up
 
-Forgejo must be running with Actions enabled.
+To use the Forgejo on this device, it must be running with Actions enabled. To use a Forgejo on another server, it needs Actions enabled there, and its address must be reachable from this device.
 
 1. In Forgejo, open **Repository / Organization / Site Settings → Actions → Runners → Create new Runner**. Create a **persistent**, not ephemeral, registration and copy its UUID and token. Prefer repository scope unless every repository in a broader scope is trusted.
-2. Complete **Configure** here. Enter those credentials and choose labels and concurrency. The default label is `ubuntu-latest`.
+2. Complete **Configure** here. Under **Forgejo Instance**, keep **This server**, or choose **Remote server** and enter the address you open Forgejo at, such as `https://forge.example.com`. An HTTPS address needs a publicly trusted certificate, so a remote `.local` address does not work. Enter those credentials and choose labels and concurrency. The default label is `ubuntu-latest`.
 3. Leave **Virtualization** enabled for the guest-kernel boundary. Without accessible KVM, new configurations default to container mode and the switch is disabled with an explanation.
 4. Start the service. First-time VM preparation can take several minutes and needs internet access. **VM Image Preparation** reports **Loading** during download and installation. Once prepared, the registration appears online in Forgejo. **Virtualized Jobs** checks show **Success** when idle and **Loading** while preparing or running a job.
 
@@ -51,7 +51,7 @@ For the workflow's own Forgejo repository, use a checkout action that authentica
 - uses: https://github.com/actions/checkout@v4
 ```
 
-Upload any artifacts you want to keep before a virtualized job finishes. Files left only on its VM are deleted. The runner installs the OS root certificate in workflow job containers and routes Forgejo's `.local` names through the OS bridge, with TLS verification enabled. Node actions receive the certificate as extra trust. Custom images without a system CA updater must supply their own trust tooling for other clients.
+Upload any artifacts you want to keep before a virtualized job finishes. Files left only on its VM are deleted. The runner installs the OS root certificate in workflow job containers and, for the Forgejo on this device, routes its `.local` names through the OS bridge, with TLS verification enabled. Node actions receive the certificate as extra trust. Custom images without a system CA updater must supply their own trust tooling for other clients.
 
 ## Replacing a forgotten registration
 

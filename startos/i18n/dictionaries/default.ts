@@ -49,6 +49,13 @@ const dict = {
   'Guest VM image is prepared': 56,
   'Guest VM image preparation failed': 57,
   'Virtualization is enabled but KVM is unavailable. Restore KVM access and save Configure with Virtualization on, or run Configure to explicitly select container mode.': 58,
+  'Forgejo Instance': 59,
+  'The Forgejo this runner takes jobs from: the one installed on this server, or one running elsewhere.': 60,
+  'This server': 61,
+  'Remote server': 62,
+  'Forgejo URL': 63,
+  'The address of the remote Forgejo, as its users open it, for example https://forge.example.com. An HTTPS address needs a publicly trusted certificate, and the address must be reachable from this server and from job containers.': 64,
+  'Must be an http:// or https:// address with no query or fragment': 65,
 }
 
 export type I18nKey = keyof typeof dict

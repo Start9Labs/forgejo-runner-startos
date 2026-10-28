@@ -8,6 +8,8 @@ const shape = z.looseObject({
   // server.connections block by the entrypoint — `register` is deprecated.
   runnerUuid: z.string().catch(''),
   runnerToken: z.string().catch(''),
+  // Empty selects the Forgejo on this server.
+  remoteUrl: z.string().catch(''),
   labels: z.string().catch(DEFAULT_RUNNER_LABELS),
   capacity: z.number().int().min(1).max(64).catch(1),
   // When true, also advertise a foreign-arch label (pinned via `?platform=`)
