@@ -13,7 +13,7 @@ ARG TARGETOS
 ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -tags netgo,osusergo \
-      -ldflags '-s -w -X code.forgejo.org/forgejo/runner/v13/internal/pkg/ver.version=v13.2.0' \
+      -ldflags '-s -w -X code.forgejo.org/forgejo/runner/v13/internal/pkg/ver.version=v13.2.1' \
       -o /bin/forgejo-runner .
 FROM $BINFMT_IMAGE AS binfmt
 
