@@ -1,18 +1,18 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '13.2.0:7',
+  version: '13.2.1:0',
   releaseNotes: {
     en_US:
-      'The runner can now take jobs from a Forgejo on another server. Choose Remote server under Forgejo Instance in the Configure action and enter its address; Forgejo on this server is then not needed.',
+      'Updated Forgejo Runner to 13.2.1, a maintenance release refreshing Docker client, gRPC and other dependencies. Full upstream release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
     es_ES:
-      'El ejecutor ahora puede tomar trabajos de un Forgejo en otro servidor. Elija Servidor remoto en Instancia de Forgejo en la acción Configurar e introduzca su dirección; entonces no se necesita Forgejo en este servidor.',
+      'Forgejo Runner actualizado a 13.2.1, una versión de mantenimiento que actualiza el cliente Docker, gRPC y otras dependencias. Notas completas de la versión original: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
     de_DE:
-      'Der Runner kann jetzt Jobs von einem Forgejo auf einem anderen Server übernehmen. Wählen Sie in der Aktion Konfigurieren unter Forgejo-Instanz „Entfernter Server“ und geben Sie dessen Adresse ein; Forgejo auf diesem Server wird dann nicht benötigt.',
+      'Forgejo Runner auf 13.2.1 aktualisiert, eine Wartungsversion mit aktualisiertem Docker-Client, gRPC und weiteren Abhängigkeiten. Vollständige Veröffentlichungshinweise des Upstream-Projekts: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
     pl_PL:
-      'Runner może teraz pobierać zadania z Forgejo na innym serwerze. W akcji Konfiguruj wybierz Serwer zdalny w polu Instancja Forgejo i podaj jego adres; Forgejo na tym serwerze nie jest wtedy potrzebne.',
+      'Zaktualizowano Forgejo Runner do wersji 13.2.1, wydania konserwacyjnego aktualizującego klienta Docker, gRPC i inne zależności. Pełne informacje o wydaniu projektu źródłowego: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
     fr_FR:
-      "Le runner peut désormais recevoir des tâches d'un Forgejo sur un autre serveur. Choisissez Serveur distant sous Instance Forgejo dans l'action Configurer et saisissez son adresse ; Forgejo n'est alors plus nécessaire sur ce serveur.",
+      'Forgejo Runner mis à jour vers 13.2.1, une version de maintenance qui actualise le client Docker, gRPC et d’autres dépendances. Notes de version complètes du projet amont : https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
   },
   migrations: {
     up: async () => {},
