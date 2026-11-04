@@ -1,6 +1,7 @@
 Subject: [PATCH] Serialize jobs expanded within one assigned task
 
 Retire when Forgejo schedules every reusable-workflow job separately, or upstream bounds local expansion to one job per assignment.
+A global semaphore around reusable callers would deadlock them; serialization stays per assignment.
 
 diff --git a/act/runner/runner.go b/act/runner/runner.go
 index e112f5e0..f3402206 100644
