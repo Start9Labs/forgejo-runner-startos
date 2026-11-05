@@ -1,18 +1,18 @@
 import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
 
 export const current = VersionInfo.of({
-  version: '13.2.1:0',
+  version: '13.2.1:1',
   releaseNotes: {
     en_US:
-      'Updated Forgejo Runner to 13.2.1, a maintenance release refreshing Docker client, gRPC and other dependencies. Full upstream release notes: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
+      'Requires StartOS 0.4.1 or later. Fixes memory use growing while the service runs.',
     es_ES:
-      'Forgejo Runner actualizado a 13.2.1, una versión de mantenimiento que actualiza el cliente Docker, gRPC y otras dependencias. Notas completas de la versión original: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
+      'Requiere StartOS 0.4.1 o posterior. Corrige el aumento del uso de memoria mientras el servicio está en ejecución.',
     de_DE:
-      'Forgejo Runner auf 13.2.1 aktualisiert, eine Wartungsversion mit aktualisiertem Docker-Client, gRPC und weiteren Abhängigkeiten. Vollständige Veröffentlichungshinweise des Upstream-Projekts: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
+      'Erfordert StartOS 0.4.1 oder neuer. Behebt einen während der Laufzeit des Dienstes ansteigenden Speicherverbrauch.',
     pl_PL:
-      'Zaktualizowano Forgejo Runner do wersji 13.2.1, wydania konserwacyjnego aktualizującego klienta Docker, gRPC i inne zależności. Pełne informacje o wydaniu projektu źródłowego: https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
+      'Wymaga StartOS 0.4.1 lub nowszego. Naprawia wzrost zużycia pamięci podczas działania usługi.',
     fr_FR:
-      'Forgejo Runner mis à jour vers 13.2.1, une version de maintenance qui actualise le client Docker, gRPC et d’autres dépendances. Notes de version complètes du projet amont : https://code.forgejo.org/forgejo/runner/releases/tag/v13.2.1',
+      "Nécessite StartOS 0.4.1 ou une version ultérieure. Corrige l'augmentation de la consommation de mémoire pendant le fonctionnement du service.",
   },
   migrations: {
     up: async () => {},
