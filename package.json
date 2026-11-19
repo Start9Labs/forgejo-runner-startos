@@ -1,7 +1,7 @@
 {
   "name": "forgejo-runner-startos",
   "dependencies": {
-    "@start9labs/start-sdk": "4.0.0",
+    "@start9labs/start-sdk": "4.1.0",
     "forgejo-startos": "github:Start9Labs/forgejo-startos#next"
   },
   "overrides": {
