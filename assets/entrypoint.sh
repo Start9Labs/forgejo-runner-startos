@@ -59,18 +59,17 @@ if [ "$RUNNER_PRIVILEGED" = true ]; then
     -e "s|^  valid_volumes: \[\]$|  valid_volumes: [\"${RUNNER_SCRATCH_DIR}\", \"${RESOLV_CONF}\"${SOCKET_VOLUME}]|" \
     "$CONFIG"
 fi
-awk -v url="$INSTANCE_URL" -v uuid="$RUNNER_UUID" -v token="$RUNNER_TOKEN" -v labels="$RUNNER_LABELS" '
+CONNECTION=$(jq -nr --arg url "$INSTANCE_URL" --arg uuid "$RUNNER_UUID" --arg token "$RUNNER_TOKEN" --arg labels "$RUNNER_LABELS" '
+  "    forgejo:",
+  "      url: \($url | @json)",
+  "      uuid: \($uuid | @json)",
+  "      token: \($token | @json)",
+  ($labels | split(",") | map(select(. != "")) | if length > 0 then "      labels:", (.[] | "        - \(@json)") else empty end)
+')
+CONNECTION=$CONNECTION awk '
   { print }
   /^  connections:[[:space:]]*$/ && !done {
-    print "    forgejo:"
-    print "      url: \"" url "\""
-    print "      uuid: \"" uuid "\""
-    print "      token: \"" token "\""
-    if (labels != "") {
-      print "      labels:"
-      n = split(labels, a, ",")
-      for (i = 1; i <= n; i++) if (a[i] != "") print "        - \"" a[i] "\""
-    }
+    print ENVIRON["CONNECTION"]
     done = 1
   }
 ' "$CONFIG" >"$CONFIG.tmp" && mv "$CONFIG.tmp" "$CONFIG"
