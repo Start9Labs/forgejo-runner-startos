@@ -189,7 +189,7 @@ export function resolveRunnerLabels(
     .filter(Boolean)
   if (
     !labels.length ||
-    labels.some((label) => !/^[^\s:,]+:docker:\/\/\S+$/.test(label))
+    labels.some((label) => !/^[^\s:,"\\]+:docker:\/\/[^\s"\\]+$/.test(label))
   ) {
     return {
       error:
