@@ -190,11 +190,32 @@ umask 077
 mkdir -p "$INCUS_CONF"
 if [ -n "$CURRENT" ]; then cp -a "$CURRENT/." "$INCUS_CONF/"; fi
 if [ -n "$TOKEN" ]; then
-  if [ -n "$URL" ]; then
-    TOKEN=$(printf '%s' "$TOKEN" | base64 -d | jq -c --arg address "\${URL#https://}" '.addresses = [$address]' | base64 -w0)
+  if ! DECODED=$(printf '%s' "$TOKEN" | base64 -d 2>/dev/null | jq -ec 'select(.addresses and .fingerprint and .secret)' 2>/dev/null); then
+    echo 'The trust token is not a valid Incus trust token' >&2; exit 1
   fi
+  if [ -n "$URL" ]; then
+    DECODED=$(jq -c --arg address "\${URL#https://}" '.addresses = [$address]' <<< "$DECODED")
+  fi
+  # The Incus client hides why an address failed, then prompts on stdin for another.
+  REACHABLE=()
+  while read -r address; do
+    if failure=$(curl -sSk --max-time 10 -o /dev/null "https://$address/1.0" 2>&1); then
+      REACHABLE+=("$address")
+    else
+      echo "https://$address: \${failure#curl: }" >&2
+    fi
+  done < <(jq -r '.addresses[]' <<< "$DECODED")
+  if [ "\${#REACHABLE[@]}" -eq 0 ]; then
+    if [ -n "$URL" ]; then
+      echo 'The Incus server is not reachable from this server at Incus Address.' >&2
+    else
+      echo 'No address in the trust token is reachable from this server. Enter the address this server should use in Incus Address.' >&2
+    fi
+    exit 1
+  fi
+  TOKEN=$(jq -c '.addresses = $ARGS.positional' --args "\${REACHABLE[@]}" <<< "$DECODED" | base64 -w0)
   incus remote remove pending >/dev/null 2>&1 || true
-  incus remote add pending "$TOKEN" --project "$PROJECT" </dev/null
+  incus remote add pending "$TOKEN" --project "$PROJECT" </dev/null >&2
   incus remote remove runner >/dev/null 2>&1 || true
   incus remote rename pending runner
 elif ! test -s "$INCUS_CONF/servercerts/runner.crt"; then
