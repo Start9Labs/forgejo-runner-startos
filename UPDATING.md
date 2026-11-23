@@ -10,7 +10,7 @@
 
 ## Guest image and firmware
 
-`runtime/assets/guest-images.json` owns the Debian cloud image release, architecture-specific SHA512 checksums and helper-image digest. Use the dated directories and published `SHA512SUMS` at its Debian `baseUrl`; never replace the dated pin with `latest`. Verify the downloaded bytes for each architecture. Guest firmware comes from Debian's `qemu-efi-aarch64` package in the runtime image. To refresh guest packages without changing the cloud release, make the preparation input change explicit rather than mutating a cached disk by hand.
+`runtime/assets/guest-images.json` owns the Debian cloud image release, architecture-specific SHA512 checksums and helper-image digest. Use the dated directories and published `SHA512SUMS` at its Debian `baseUrl`; never replace the dated pin with `latest`. Verify the downloaded bytes for each architecture. `incusImage` names the base image the Incus backend launches. Incus servers pull it themselves, so it is not checksum-pinned. Keep it on the same Debian release as `release`. Guest firmware comes from Debian's `qemu-efi-aarch64` package in the runtime image. To refresh guest packages without changing the cloud release, make the preparation input change explicit rather than mutating a cached disk by hand.
 
 ## User-mode QEMU
 

@@ -26,7 +26,11 @@ import {
   installRootCa,
   installLocalHosts,
   forgejoConnection,
+  incusArchitecture,
+  incusEnv,
   ROOT_CA_PATH,
+  INCUS_DIR,
+  INCUS_SUBPATH,
 } from './utils'
 
 export const main = sdk.setupMain(async ({ effects }) => {
@@ -41,13 +45,18 @@ export const main = sdk.setupMain(async ({ effects }) => {
   if (!store) throw new Error(i18n('Store not found'))
   const { url, localHosts } = await forgejoConnection(effects, store.remoteUrl)
   const available = await virtualizationAvailable(effects)
-  const backend = runnerBackend(store.virtualization, available)
+  const backend = runnerBackend(store.execution, available)
   const rootCa = await sdk.getRootCa(effects)
   const env = {
     INSTANCE_URL: url,
     RUNNER_UUID: store.runnerUuid,
     RUNNER_TOKEN: store.runnerToken,
-    RUNNER_LABELS: runnerLabels(store).join(','),
+    RUNNER_LABELS: runnerLabels(
+      store,
+      backend === 'incus'
+        ? await incusArchitecture(effects, store.incus.connectionId)
+        : undefined,
+    ).join(','),
     RUNNER_PRIVILEGED: 'true',
     RUNNER_CONFIGURE_ACTION: i18n('Configure'),
     RUNNER_ROOT_CA: ROOT_CA_PATH,
@@ -191,44 +200,53 @@ export const main = sdk.setupMain(async ({ effects }) => {
           display: i18n('Container Mode'),
           fn: async () => ({
             result: 'success',
-            message: available
-              ? i18n(
-                  'Virtualization is disabled. Jobs use privileged containers within the service and share the StartOS kernel. Only run trusted workflows.',
-                )
-              : i18n(
-                  'KVM is unavailable. Jobs use containers and share the StartOS kernel.',
-                ),
+            message: i18n(
+              'Local containers are selected. Jobs use privileged containers within the service and share the StartOS kernel. Only run trusted workflows.',
+            ),
           }),
         },
         requires: [],
       })
   }
 
-  const resources = vmResources(store.capacity)
-  const diskGiB = await vmDiskSize(effects, store.capacity)
-  const preparationResources = vmResources(1)
+  const guestMounts = (mounts: ReturnType<typeof sdk.Mounts.of>) =>
+    backend === 'incus'
+      ? mounts.mountVolume({
+          volumeId: 'main',
+          subpath: INCUS_SUBPATH,
+          mountpoint: INCUS_DIR,
+          readonly: true,
+        })
+      : mounts.mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-pool',
+          mountpoint: '/pool',
+          readonly: false,
+        })
   const preparer = sdk.SubContainer.of(
     effects,
     { imageId: 'main' },
-    sdk.Mounts.of()
-      .mountVolume({
-        volumeId: 'scratch',
-        subpath: './vm-images',
-        mountpoint: '/cache',
-        readonly: false,
-      })
-      .mountVolume({
-        volumeId: 'scratch',
-        subpath: './vm-preparation/runtime',
-        mountpoint: '/vm',
-        readonly: false,
-      })
-      .mountVolume({
-        volumeId: 'scratch',
-        subpath: './vm-preparation/control',
-        mountpoint: '/data',
-        readonly: false,
-      }),
+    guestMounts(
+      sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-images',
+          mountpoint: '/cache',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-preparation/runtime',
+          mountpoint: '/vm',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-preparation/control',
+          mountpoint: '/data',
+          readonly: false,
+        }),
+    ),
     'vm-image-preparation',
   )
   await installRootCa(preparer, rootCa)
@@ -237,31 +255,28 @@ export const main = sdk.setupMain(async ({ effects }) => {
   await preparer.execFail(['rm', '-f', preparationStatusPath], {
     user: 'root',
   })
-  const memoryEnv = {
-    VM_POOL_MEMORY_MB: String(resources.memoryMiB),
-    VM_BOOT_MEMORY_MB: String(resources.bootMemoryMiB),
-    VM_MEMORY_BLOCK_MB: String(resources.blockMemoryMiB),
-    VM_MEMORY_DEVICE_ID: resources.memoryDeviceId,
-    VM_CAPACITY: String(store.capacity),
+  let backendEnv: Record<string, string>
+  let preparationEnv: Record<string, string>
+  if (backend === 'incus') {
+    backendEnv = incusEnv(store.incus)
+    preparationEnv = backendEnv
+  } else {
+    const resources = vmResources(store.capacity)
+    const preparationResources = vmResources(1)
+    backendEnv = {
+      VM_POOL_MEMORY_MB: String(resources.memoryMiB),
+      VM_BOOT_MEMORY_MB: String(resources.bootMemoryMiB),
+      VM_MEMORY_BLOCK_MB: String(resources.blockMemoryMiB),
+      VM_MEMORY_DEVICE_ID: resources.memoryDeviceId,
+      VM_CAPACITY: String(store.capacity),
+      VM_DISK_GB: String(await vmDiskSize(effects, store.capacity)),
+      VM_CPU_CORES: String(resources.cpuCores),
+    }
+    preparationEnv = {
+      VM_MEMORY_MB: String(preparationResources.memoryMiB),
+      VM_CPU_CORES: String(preparationResources.cpuCores),
+    }
   }
-  const memoryPool = sdk.SubContainer.of(
-    effects,
-    { imageId: 'main' },
-    sdk.Mounts.of()
-      .mountVolume({
-        volumeId: 'scratch',
-        subpath: './vm-pool',
-        mountpoint: '/pool',
-        readonly: false,
-      })
-      .mountVolume({
-        volumeId: 'scratch',
-        subpath: './vm-workers',
-        mountpoint: '/workers',
-        readonly: true,
-      }),
-    'vm-memory-pool',
-  )
   let daemons = sdk.Daemons.of(effects)
     .addOneshot('prepare-vm', {
       subcontainer: preparer,
@@ -269,9 +284,8 @@ export const main = sdk.setupMain(async ({ effects }) => {
         command: ['bash', '/usr/local/bin/prepare-vm.sh'],
         user: 'root',
         env: {
+          ...preparationEnv,
           VM_DOCKER_PORT: '23650',
-          VM_MEMORY_MB: String(preparationResources.memoryMiB),
-          VM_CPU_CORES: String(preparationResources.cpuCores),
           VM_PREPARATION_STATUS: preparationStatusPath,
           RUNNER_ROOT_CA: ROOT_CA_PATH,
         },
@@ -298,12 +312,31 @@ export const main = sdk.setupMain(async ({ effects }) => {
       },
       requires: [],
     })
-    .addDaemon('memory-pool', {
+  if (backend === 'vm') {
+    const memoryPool = sdk.SubContainer.of(
+      effects,
+      { imageId: 'main' },
+      sdk.Mounts.of()
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-pool',
+          mountpoint: '/pool',
+          readonly: false,
+        })
+        .mountVolume({
+          volumeId: 'scratch',
+          subpath: './vm-workers',
+          mountpoint: '/workers',
+          readonly: true,
+        }),
+      'vm-memory-pool',
+    )
+    daemons = daemons.addDaemon('memory-pool', {
       subcontainer: memoryPool,
       exec: {
         command: ['python3', '-B', '/usr/local/bin/vm-pool.py', 'serve'],
         user: 'root',
-        env: memoryEnv,
+        env: backendEnv,
       },
       ready: {
         display: i18n('Guest Memory Pool'),
@@ -317,38 +350,35 @@ export const main = sdk.setupMain(async ({ effects }) => {
         },
       },
       requires: ['prepare-vm'],
-    })
+    }) as typeof daemons
+  }
   for (let slot = 0; slot < store.capacity; slot++) {
     const port = 23750 + slot
     const controllerPath = `./controller/workers/${slot}`
     const guest = sdk.SubContainer.of(
       effects,
       { imageId: 'main' },
-      sdk.Mounts.of()
-        .mountVolume({
-          volumeId: 'scratch',
-          subpath: './vm-pool',
-          mountpoint: '/pool',
-          readonly: false,
-        })
-        .mountVolume({
-          volumeId: 'scratch',
-          subpath: './vm-images',
-          mountpoint: '/base',
-          readonly: true,
-        })
-        .mountVolume({
-          volumeId: 'scratch',
-          subpath: `./vm-workers/${slot}`,
-          mountpoint: '/vm',
-          readonly: false,
-        })
-        .mountVolume({
-          volumeId: 'main',
-          subpath: controllerPath,
-          mountpoint: '/data',
-          readonly: false,
-        }),
+      guestMounts(
+        sdk.Mounts.of()
+          .mountVolume({
+            volumeId: 'scratch',
+            subpath: './vm-images',
+            mountpoint: '/base',
+            readonly: true,
+          })
+          .mountVolume({
+            volumeId: 'scratch',
+            subpath: `./vm-workers/${slot}`,
+            mountpoint: '/vm',
+            readonly: false,
+          })
+          .mountVolume({
+            volumeId: 'main',
+            subpath: controllerPath,
+            mountpoint: '/data',
+            readonly: false,
+          }),
+      ),
       `vm-worker-${slot}`,
     )
     await installRootCa(guest, rootCa)
@@ -379,7 +409,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
           user: 'root',
           env: {
             ...env,
-            ...memoryEnv,
+            ...backendEnv,
             VM_SLOT: String(slot),
             VM_GUEST_HOSTNAME: 'forgejo-job',
             RUNNER_BEFORE_JOB: '/usr/local/bin/request-vm.sh',
@@ -387,8 +417,6 @@ export const main = sdk.setupMain(async ({ effects }) => {
             RUNNER_EMULATION: String(store.emulation),
             RUNNER_SCRATCH_DIR: '/var/lib/runner-scratch',
             VM_DOCKER_PORT: String(port),
-            VM_DISK_GB: String(diskGiB),
-            VM_CPU_CORES: String(resources.cpuCores),
           },
         },
         ready: {

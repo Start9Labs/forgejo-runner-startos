@@ -2,7 +2,7 @@
 set -euo pipefail
 printf '%s' "${VM_LEASE:?}" > /vm/request.tmp
 mv /vm/request.tmp /vm/request
-echo 'Waiting for shared memory and a disposable job VM'
+echo 'Waiting for a disposable job VM'
 while true; do
   case "$(cat /vm/phase)" in
     ready) exit 0 ;;

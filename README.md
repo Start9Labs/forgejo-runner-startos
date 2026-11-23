@@ -9,7 +9,7 @@
 > upstream documentation is accurate and fully applicable — see the
 > Documentation section of `instructions.md` for links.
 
-[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes workflows for the Forgejo on this device, or for a Forgejo on another server. One persistent registration serves all execution slots.
+[Forgejo Runner](https://code.forgejo.org/forgejo/runner) executes workflows for the Forgejo on this device, or for a Forgejo on another server. Jobs run in disposable local VMs, in local containers, or in disposable VMs on a remote Incus server. One persistent registration serves all execution slots.
 
 ## Table of Contents
 
@@ -34,13 +34,15 @@ In virtualized mode, each slot polls with a host-side `one-job --wait` process a
 
 The first virtualized start downloads a checksum-pinned Debian cloud image and prepares a cached Docker guest. Preparation never receives Forgejo registration credentials. Prepared images are rebuilt when their pinned image or provisioning inputs change; jobs always use separate writable overlays.
 
+With **Remote Incus**, the same per-slot workers run on StartOS, but each assignment launches an ephemeral Incus VM (`--vm --ephemeral`) on the enrolled server, with the configured project, profile, optional storage pool and network, CPU, memory and root-disk size. There is no local memory pool and no KVM requirement on StartOS; the Incus server enforces limits. The worker reaches the guest's Docker API through `incus exec … socat` over the authenticated Incus API, with the same per-guest mutual TLS inside that tunnel; no guest port is published on any network. Completion or failure deletes the instance. Deletion attempts are bounded to two minutes. Failed cleanup blocks the slot from polling until the previous instance is confirmed deleted or absent; API connection errors do not establish absence. Instance and image names start with `forgejo-runner-<id>`, where `<id>` derives from this installation's Incus client certificate. A restarted worker deletes leftover instances of its own slot.
+
 In container mode, `container-engine` runs rootful Docker within the StartOS service. `runner-controller` has its own filesystem and persistent controller state. Jobs receive privileged containers, the service-local engine socket and scratch; they share the StartOS kernel and can control that engine's other jobs. This is not VM isolation. Docker uses fuse-overlayfs, retained namespace-local binfmt registration, and `runc-nested` to remove the unsupported nested sysctl.
 
 | Subcontainer           | Purpose                                                          |
 | ---------------------- | ---------------------------------------------------------------- |
-| `vm-image-preparation` | Download, verify and prepare the guest base                      |
-| `vm-memory-pool`       | Admit guests and redistribute a single RAM budget                |
-| `vm-worker-N`          | Host-side controller and hypervisor for slot N, starting at zero |
+| `vm-image-preparation` | Download, verify and prepare the guest base (local or on Incus)  |
+| `vm-memory-pool`       | Admit local guests and redistribute a single RAM budget          |
+| `vm-worker-N`          | Host-side controller for slot N, starting at zero                |
 | `container-engine`     | Docker engine when virtualization is explicitly off              |
 | `runner-controller`    | One multi-job controller in container mode                       |
 
@@ -51,9 +53,10 @@ Persistent configuration and controller state are separate from reconstructible 
 | Volume path                      | Mount                                                       | Contents                                                                       |
 | -------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `main/store.json`                | File-model access only                                      | Registration and execution settings                                            |
+| `main/incus/<connectionId>`      | Read-only `/incus/<connectionId>` in Incus-mode preparation and workers | Immutable client certificate and key, pinned server certificate, remote config |
 | `main/controller/workers/N`      | `/data` in VM worker N                                      | Generated runner configuration, logs, rejection marker, active client TLS keys |
 | `main/controller/container`      | `/data` in container controller                             | Generated runner configuration, logs and rejection marker                      |
-| `scratch/vm-images`              | `/cache` in preparation; read-only `/base` in workers       | Verified cloud image and prepared base                                         |
+| `scratch/vm-images`              | `/cache` in preparation; read-only `/base` in workers       | Verified cloud image and prepared base, or the published Incus image alias     |
 | `scratch/vm-preparation/runtime` | `/vm` in preparation                                        | Temporary preparation disk and seed                                            |
 | `scratch/vm-preparation/control` | `/data` in preparation                                      | Temporary TLS and provisioning state                                           |
 | `scratch/vm-workers/N`           | `/vm` in worker N; read-only `/workers/N` in memory manager | Disposable disk, seed, serial log, QMP socket and lease identity               |
@@ -64,7 +67,7 @@ VM jobs bind guest-local `/var/lib/runner-scratch` at `/root/setup-docker-action
 
 ## File Models
 
-`store.json` is a loose JSON model seeded by merging defaults. It owns `runnerUuid`, `runnerToken`, `remoteUrl`, `labels`, `capacity`, `emulation` and `virtualization`; unmodeled keys survive writes. The configuration action updates these values, and reactive reads restart execution when they change.
+`store.json` is a loose JSON model seeded by merging defaults. It owns `runnerUuid`, `runnerToken`, `remoteUrl`, `labels`, `capacity`, `emulation`, `execution` (`vm`, `container` or `incus`) and `incus` (address, pinned server fingerprint, immutable connection ID, project, profile, storage pool, network, CPU cores, memory and disk per job); unmodeled keys survive writes. Version 13.2.2:2 migrates a saved `virtualization: false` to `execution: container`. The Incus trust token is never stored. The configuration action updates these values, and reactive reads restart execution when they change.
 
 `remoteUrl` is empty for the Forgejo on this server; otherwise it holds the remote address, stored without a trailing slash. Each controller regenerates `/data/runner/config.yaml` at launch from settings and the resolved Forgejo address. Hand edits do not survive. Runner privilege policy, engine endpoint and mounts are package-controlled. Controller Docker clients use an empty registry-auth configuration; job-provided credentials are distinct from controller credentials.
 
@@ -84,13 +87,15 @@ Artifact uploads also use URLs signed by Forgejo under its configured Primary UR
 
 For a local Forgejo, its derived mDNS hostnames are mapped to the OS bridge in workflow job containers, preserving the requested hostname, SNI and certificate verification. Neither TLS verification nor hostname checks are disabled. Only the public CA is copied; controller registration credentials, OS private keys and per-VM Docker client keys stay outside guests. Custom Docker action images can read the shared public certificate through Node's extra-CA environment; their system trust tooling and DNS configuration remain the image/workflow's responsibility.
 
+An Incus server must be reachable from this server at its API address. Configure decodes the trust token from `incus config trust add`, replaces its server addresses with the entered address when one is given, and lets the Incus client enroll this package's certificate. The server certificate must match the token's fingerprint. Configure stages enrollment separately and publishes a content-addressed connection directory; a rejected save leaves the active connection unchanged. Each guest's cleanup record retains its originating connection ID and project, and prior connection directories remain available for cleanup after reconfiguration. Job VMs need outbound internet access through their profile or network. They reach a local Forgejo's Primary URL, artifact URLs and `.local` host mappings only when the Incus server's network can route to this server.
+
 QEMU uses user networking. Each guest Docker API is forwarded to a distinct service-loopback port starting at 23750; image preparation uses 23650. Every guest gets a unique CA and server-only certificate. Client private keys and the CA signing key are never seeded into guests. Mutual TLS is required even on loopback: QEMU's guest host alias can reach the parent loopback namespace. There are no guest SSH forwards.
 
 Container mode uses bridge `runner` at `172.18.0.1/24`, with job networks from `172.20.0.0/16`. Avoid conflicting workflow networks.
 
 ## Installation and First-Run Flow
 
-Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. New settings default to container mode without accessible KVM. If virtualization is already enabled and KVM becomes unavailable, a critical Configure task blocks startup and main refuses to create either backend. Restore KVM access and save Configure with Virtualization on, or explicitly save it with Virtualization off to use containers. The saved choice and registration are not automatically changed; the task clears when the selected backend is usable. VM startup failures also never select container mode.
+Initialization merges settings defaults and raises a critical setup prompt until registration credentials are present. Hardware virtualization availability is checked by opening the service's KVM device. New settings default to container mode without accessible KVM. If **Local VMs** is already selected and KVM becomes unavailable, a critical Configure task blocks startup and main refuses to create any backend. Restore KVM access and save Configure with Local VMs, or explicitly select another execution mode. The saved choice and registration are not automatically changed; the task clears when the selected backend is usable. VM startup failures also never select container mode.
 
 The hardware floor is two CPU cores and the four-gigabyte memory class. Half the service-visible RAM, rounded down to 128 MiB blocks, forms one guest-memory pool. Configured concurrency must fit a 512 MiB boot floor per simultaneous guest. A lone active job may use the whole pool; new assignments divide fair targets among active and waiting jobs. Idle slots have no VM or guest-memory commitment.
 
@@ -100,11 +105,11 @@ Disk limits divide half the free scratch space observed at startup, capped at 32
 
 ## Actions
 
-Use configuration to choose the Forgejo instance and to change registration, routing or execution policy. It rewrites the settings model and restarts execution, interrupting active work. Repeating identical settings is safe; there is no additional registration created per slot or job.
+Use configuration to choose the Forgejo instance and to change registration, routing or execution policy. With **Remote Incus**, saving connects to the server, enrolls a supplied trust token, checks the project, and reads the server's kernel architecture for labels; any failure rejects the save. It rewrites the settings model and restarts execution, interrupting active work. Repeating identical settings is safe; there is no additional registration created per slot or job.
 
 ## Tasks
 
-A critical configuration task blocks service startup while credentials are missing, labels are invalid, or the selected VM concurrency cannot fit its resource budget. Correcting the settings clears it. These conditions can recur after a restore or hardware/storage change.
+A critical configuration task blocks service startup while credentials are missing, labels are invalid, Remote Incus is selected without an enrolled server, or the selected local VM concurrency cannot fit its resource budget. Correcting the settings clears it. These conditions can recur after a restore or hardware/storage change.
 
 While the local Forgejo is selected and its Actions are disabled, the dependency receives a task targeting its Configure action. Enabling Actions clears that dependency task; selecting a remote Forgejo hides it.
 
@@ -114,13 +119,13 @@ Container readiness checks the controller process and its engine. A separate inf
 
 **VM Image Preparation** reports loading while the base image is downloaded and provisioned, success after preparation and cleanup finish, and failure on an error or a dead preparation process. A fresh status marker is required on every service start; a cached prepared image completes this check quickly. The preparation oneshot remains the startup barrier for the memory manager and workers. The progress check never controls their lifetime.
 
-An idle VM slot checks its supervisor and runner process and reports **success** with no VM allocated. The visible job-phase check reports **loading** while preparing or running an assigned job; it does not gate workers or the memory manager. Hidden controller readiness remains successful while idle or executing, and starting during memory admission and boot. Active execution additionally checks its hypervisor and mutually authenticated guest Docker API. The memory manager has its own process/control-socket check. Serial logs distinguish guest provisioning failures. A rejected registration produces the same credential-replacement diagnostic in either mode.
+An idle VM slot checks its supervisor and runner process and reports **success** with no VM allocated. The visible job-phase check reports **loading** while preparing or running an assigned job; it does not gate workers or the memory manager. Hidden controller readiness remains successful while idle or executing, and starting during memory admission and boot. Active execution additionally checks its hypervisor and mutually authenticated guest Docker API. The memory manager has its own process/control-socket check in Local VMs mode. In Remote Incus mode, "active execution" checks the local tunnel process and the guest Docker API through it; an unreachable Incus server fails service start, since labels need its architecture. `/vm/tunnel.log` in each worker holds tunnel errors. Serial logs distinguish guest provisioning failures. A rejected registration produces the same credential-replacement diagnostic in either mode.
 
 A guest or provisioning failure fails that slot. Its controller has up to three minutes to report the failed job before the entire controller process group is terminated. The VM is stopped before its memory reservation is released. The next polling process has no guest until another assignment; failure never starts a local container engine. Unexpected controller termination can leave Forgejo to time out its assigned task; jobs are not automatically replayed by the package.
 
 ## Backups and Restore
 
-Backups copy the entire `main` volume, including settings and controller state. `scratch` is excluded wholesale: guest images, disposable disks, container layers and build caches are reconstructible.
+Backups copy the entire `main` volume, including settings, controller state and the Incus client key. `scratch` is excluded wholesale: guest images, disposable disks, container layers and build caches are reconstructible.
 
 A restored service must still have Forgejo and a recognized persistent registration. Guest bases rebuild, container images repull, and transport certificates are regenerated. A registration absent from Forgejo needs replacement credentials.
 
@@ -133,7 +138,8 @@ A restored service must still have Forgejo and a recognized persistent registrat
 5. Initial guest preparation needs outbound access to the pinned cloud image, Debian repositories and helper image. Failed preparation does not change execution mode.
 6. Guest memory grants and disks are bounded, but CPU, networking and the StartOS host remain shared resources. A job waiting for memory has already been assigned in Forgejo; its logs report provisioning while the shared pool waits for reclamation. Busy or pinned memory can delay another job until an active guest finishes.
 7. Foreign-architecture labels use slower user-mode emulation inside the selected execution environment; native workers are preferable for regular builds.
-8. A remote Forgejo must be reachable at its configured URL from this server and from job containers, and an HTTPS URL needs a publicly trusted certificate. Only the OS root CA of this server is added to trust stores, and no host mappings are added for a remote Forgejo, so a `.local` address or a certificate from another server's private CA fails. When the remote Forgejo is unreachable, the runner exits on `fail to invoke Declare` with the connection error, StartOS restarts it, and the execution health check reports it as not running.
+8. Remote Incus requires Incus VM support on the server. Labels use the Incus server's architecture; emulation adds the other one. One registration serves one Incus server; serving several servers or architectures needs one runner registration per server, which this package does not yet support. Each prepared image is published in the configured project, and superseded images from this installation are deleted after a successful rebuild.
+9. A remote Forgejo must be reachable at its configured URL from this server and from job containers, and an HTTPS URL needs a publicly trusted certificate. Only the OS root CA of this server is added to trust stores, and no host mappings are added for a remote Forgejo, so a `.local` address or a certificate from another server's private CA fails. When the remote Forgejo is unreachable, the runner exits on `fail to invoke Declare` with the connection error, StartOS restarts it, and the execution health check reports it as not running.
 
 ## Shared Runtime Maintenance
 
@@ -148,7 +154,7 @@ architectures: [x86_64, aarch64]
 subcontainers:
   [
     vm-image-preparation,
-    vm-memory-pool,
+    vm-memory-pool (Local VMs only),
     vm-worker-N,
     container-engine,
     runner-controller,
@@ -182,6 +188,16 @@ startos_managed_env_vars:
   - RUNNER_BEFORE_JOB
   - VM_CPU_CORES
   - VM_DISK_GB
+  - VM_BACKEND
+  - INCUS_NAME_PREFIX
+  - INCUS_CONNECTION_ID
+  - INCUS_PROJECT
+  - INCUS_PROFILE
+  - INCUS_STORAGE_POOL
+  - INCUS_NETWORK
+  - INCUS_CPU_CORES
+  - INCUS_MEMORY_GIB
+  - INCUS_DISK_GIB
 dependencies:
   - { id: forgejo, optional: true, enabled_when: 'remoteUrl is empty' }
 interfaces: {}

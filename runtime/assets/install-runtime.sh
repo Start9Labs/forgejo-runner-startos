@@ -3,7 +3,8 @@ set -eu
 apt-get update
 apt-get install -y --no-install-recommends \
   curl ca-certificates fuse-overlayfs iproute2 iptables jq git python3 \
-  qemu-system-x86 qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage
+  qemu-system-x86 qemu-system-arm qemu-utils qemu-efi-aarch64 genisoimage \
+  incus-client socat
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 chmod a+r /etc/apt/keyrings/docker.asc
@@ -21,7 +22,9 @@ for name in engine vm-worker vm-pool request-vm prepare-vm; do
   ln -s "/usr/local/share/ci-runner/$name.$suffix" "/usr/local/bin/$name.$suffix"
 done
 ln -s /usr/local/share/ci-runner/runc-nested.sh /usr/local/bin/runc-nested
-ln -s /usr/local/share/ci-runner/vm.sh /usr/local/libexec/runner-vm.sh
+for name in guest vm incus incus-connect backend; do
+  ln -s "/usr/local/share/ci-runner/$name.sh" "/usr/local/libexec/runner-$name.sh"
+done
 ln -s /usr/local/share/ci-runner/docker-client.sh /usr/local/libexec/runner-docker-client.sh
 ln -s /usr/local/share/ci-runner/guest-cloud-init.yaml /usr/local/share/runner-guest-cloud-init.yaml
 ln -s /usr/local/share/ci-runner/guest-images.json /usr/local/share/runner-guest-images.json
