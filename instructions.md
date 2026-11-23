@@ -36,7 +36,7 @@ runs-on: ubuntu-latest
 The Incus server must support VMs, and its API must be reachable from this device.
 
 1. On the Incus server, create a trust token with `incus config trust add forgejo-runner`. To restrict the runner to one project, add `--restricted --projects <project>`.
-2. In **Configure**, choose **Execution → Remote Incus**. Paste the token into **Trust Token**. Enter **Incus Address** if this device should reach the server at an address other than the ones in the token, for example `https://incus.example.com:8443`.
+2. In **Configure**, choose **Execution → Remote Incus**. Paste the token into **Trust Token**. Enter **Incus Address** if this device should reach the server at an address other than the ones in the token, for example `https://incus.example.com:8443`. An `https://` address without a port uses 443; a bare host name uses Incus's default port, 8443.
 3. Set **Project** and **Profile**. The profile must give job VMs a root disk and a network with internet access. **Storage Pool** and **Network** are optional overrides. Set the CPU cores, memory and disk each job VM gets.
 4. Save. Saving connects to the server immediately and reports any problem. The token is used once and not stored. Leave it empty on later saves; enter a new one only to connect to a different server. A rejected save leaves the active connection unchanged.
 

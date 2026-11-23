@@ -111,17 +111,16 @@ export function runnerBackend(execution: Execution, available: boolean) {
   return execution
 }
 
-// Accepts host, host:port or an https URL; the Incus API port defaults to 8443.
+// An https URL without a port means 443; a bare host means the Incus default, 8443.
 export function incusAddress(address: string) {
   const trimmed = address.trim().replace(/\/+$/, '')
   if (!trimmed) return ''
-  const url = new URL(
-    /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
-  )
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+  const url = new URL(hasScheme ? trimmed : `https://${trimmed}`)
   if (url.protocol !== 'https:' || url.pathname !== '/' || url.search) {
     throw new Error(i18n('The Incus address must be an https:// address'))
   }
-  return `https://${url.hostname}:${url.port || '8443'}`
+  return `https://${url.hostname}:${url.port || (hasScheme ? '443' : '8443')}`
 }
 
 export function incusName(value: string) {

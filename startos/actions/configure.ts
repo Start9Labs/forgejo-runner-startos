@@ -28,7 +28,7 @@ const incusSpec = InputSpec.of({
   url: Value.text({
     name: i18n('Incus Address'),
     description: i18n(
-      'The Incus API address, such as https://incus.example.com:8443. Leave empty to use the addresses in the trust token. The port defaults to 8443.',
+      'The Incus API address, such as https://incus.example.com:8443. Leave empty to use the addresses in the trust token. An https:// address without a port uses 443; a bare host name uses the Incus default, 8443.',
     ),
     required: false,
     default: null,

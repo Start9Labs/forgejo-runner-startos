@@ -52,7 +52,7 @@ const dict = {
   'Must be an http:// or https:// address with no query or fragment': 65,
   'Must start with a letter or digit and contain only letters, digits, dots, dashes and underscores': 66,
   'Incus Address': 67,
-  'The Incus API address, such as https://incus.example.com:8443. Leave empty to use the addresses in the trust token. The port defaults to 8443.': 68,
+  'The Incus API address, such as https://incus.example.com:8443. Leave empty to use the addresses in the trust token. An https:// address without a port uses 443; a bare host name uses the Incus default, 8443.': 68,
   'Trust Token': 69,
   'Create one on the Incus server with "incus config trust add forgejo-runner". Needed the first time and to connect to a different server; leave empty to keep the current trust.': 70,
   Project: 71,
