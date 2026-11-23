@@ -29,13 +29,13 @@ export const SCRATCH_DIR = '/scratch'
 export const JOB_SCRATCH_DIR = `${SCRATCH_DIR}/jobs`
 export const RUNTIME_DIR = `${SCRATCH_DIR}/run`
 export const DOCKER_HOST = `unix://${RUNTIME_DIR}/docker.sock`
+export const INCUS_DIR = '/incus'
+export const INCUS_SUBPATH = './incus'
+const INCUS_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+export type Execution = 'vm' | 'container' | 'incus'
 export type RunnerSettings = {
-  runnerUuid: string
-  runnerToken: string
   labels: string
-  capacity: number
   emulation: boolean
-  virtualization: boolean
 }
 
 export const mount = sdk.Mounts.of()
@@ -95,10 +95,170 @@ export async function forgejoConnection(
   return { url: `http://${bridge}`, localHosts }
 }
 
-export function runnerBackend(virtualization: boolean, available: boolean) {
-  const resolved = resolveRunnerBackend(virtualization, available)
-  if (resolved.error) throw new Error(i18n(resolved.error))
-  return resolved.backend
+export function runnerBackend(execution: Execution, available: boolean) {
+  if (execution === 'incus') return execution
+  if (resolveRunnerBackend(execution === 'vm', available).error) {
+    throw new Error(
+      i18n(
+        'Local VMs are selected, but KVM is unavailable. Restore KVM access, or run Configure to select another execution mode.',
+      ),
+    )
+  }
+  return execution
+}
+
+// Accepts host, host:port or an https URL; the Incus API port defaults to 8443.
+export function incusAddress(address: string) {
+  const trimmed = address.trim().replace(/\/+$/, '')
+  if (!trimmed) return ''
+  const url = new URL(
+    /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`,
+  )
+  if (url.protocol !== 'https:' || url.pathname !== '/' || url.search) {
+    throw new Error(i18n('The Incus address must be an https:// address'))
+  }
+  return `https://${url.hostname}:${url.port || '8443'}`
+}
+
+export function incusName(value: string) {
+  return !value || INCUS_NAME.test(value)
+}
+
+function incusSubcontainer<T>(
+  effects: Parameters<typeof sdk.SubContainer.of>[0],
+  readonly: boolean,
+  name: string,
+  fn: (
+    subcontainer: Parameters<
+      Parameters<typeof sdk.SubContainer.withTemp>[4]
+    >[0],
+  ) => Promise<T>,
+) {
+  return sdk.SubContainer.withTemp(
+    effects,
+    { imageId: 'main' },
+    sdk.Mounts.of().mountVolume({
+      volumeId: 'main',
+      subpath: INCUS_SUBPATH,
+      mountpoint: INCUS_DIR,
+      readonly,
+    }),
+    name,
+    fn,
+  )
+}
+
+/**
+ * Trusts this runner's client certificate on the Incus server and returns the
+ * pinned server certificate's SHA-256 fingerprint. Without a token, keeps the
+ * existing trust and only repoints its address.
+ */
+export async function enrollIncus(
+  effects: Parameters<typeof sdk.SubContainer.of>[0],
+  settings: { url: string; token: string; project: string },
+) {
+  const result = await incusSubcontainer(
+    effects,
+    false,
+    'incus-enrollment',
+    async (subcontainer) => {
+      await subcontainer.execFail(['mkdir', '-p', INCUS_DIR], { user: 'root' })
+      return subcontainer.exec(
+        [
+          'bash',
+          '-ec',
+          `export INCUS_CONF=${INCUS_DIR}
+if [ -n "$TOKEN" ]; then
+  if [ -n "$URL" ]; then
+    TOKEN=$(printf '%s' "$TOKEN" | base64 -d | jq -c --arg address "\${URL#https://}" '.addresses = [$address]' | base64 -w0)
+  fi
+  incus remote remove pending >/dev/null 2>&1 || true
+  incus remote add pending "$TOKEN" --project "$PROJECT" </dev/null
+  incus remote remove runner >/dev/null 2>&1 || true
+  incus remote rename pending runner
+elif ! test -s ${INCUS_DIR}/servercerts/runner.crt; then
+  echo 'NOT_ENROLLED'; exit 3
+elif [ -n "$URL" ]; then
+  incus remote set-url runner "$URL"
+fi
+incus query runner:/1.0 </dev/null | jq -e '.auth == "trusted"' >/dev/null
+incus query "runner:/1.0/projects/$PROJECT" </dev/null >/dev/null
+openssl x509 -in ${INCUS_DIR}/servercerts/runner.crt -noout -fingerprint -sha256 | cut -d= -f2`,
+        ],
+        {
+          user: 'root',
+          timeout: 120000,
+          env: {
+            TOKEN: settings.token,
+            URL: settings.url,
+            PROJECT: settings.project,
+          },
+        },
+      )
+    },
+  )
+  if (result.exitCode === 3) {
+    throw new Error(
+      i18n('Enter a trust token to connect this runner to the Incus server'),
+    )
+  }
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `${i18n('Could not connect to the Incus server')}: ${String(result.stderr).trim()}`,
+    )
+  }
+  return String(result.stdout).trim()
+}
+
+/** Guest backend settings consumed by `runtime/assets/incus.sh`. */
+export function incusEnv(settings: {
+  project: string
+  profile: string
+  storagePool: string
+  network: string
+  cpuCores: number
+  memoryGiB: number
+  diskGiB: number
+}) {
+  return {
+    VM_BACKEND: 'incus',
+    INCUS_NAME_PREFIX: 'forgejo-runner',
+    INCUS_PROJECT: settings.project,
+    INCUS_PROFILE: settings.profile,
+    INCUS_STORAGE_POOL: settings.storagePool,
+    INCUS_NETWORK: settings.network,
+    INCUS_CPU_CORES: String(settings.cpuCores),
+    INCUS_MEMORY_GIB: String(settings.memoryGiB),
+    INCUS_DISK_GIB: String(settings.diskGiB),
+  }
+}
+
+/** The Incus server's CPU architecture, in Node's `os.arch()` naming. */
+export async function incusArchitecture(
+  effects: Parameters<typeof sdk.SubContainer.of>[0],
+  project: string,
+) {
+  const result = await incusSubcontainer(
+    effects,
+    true,
+    'incus-architecture',
+    (subcontainer) =>
+      subcontainer.exec(
+        [
+          'sh',
+          '-ec',
+          `INCUS_CONF=${INCUS_DIR} incus query runner:/1.0 </dev/null | jq -er .environment.kernel_architecture`,
+        ],
+        { user: 'root', timeout: 30000, env: { PROJECT: project } },
+      ),
+  )
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `${i18n('Could not connect to the Incus server')}: ${String(result.stderr).trim()}`,
+    )
+  }
+  const kernel = String(result.stdout).trim()
+  return kernel === 'aarch64' ? 'arm64' : kernel === 'x86_64' ? 'x64' : kernel
 }
 
 export async function virtualizationAvailable(
@@ -164,8 +324,8 @@ export function vmResources(capacity: number) {
   return resources
 }
 
-export function runnerLabels(settings: RunnerSettings) {
-  const resolved = resolveRunnerLabels(settings)
+export function runnerLabels(settings: RunnerSettings, architecture?: string) {
+  const resolved = resolveRunnerLabels(settings, architecture)
   if (resolved.error) throw new Error(i18n(resolved.error))
   return resolved.labels
 }

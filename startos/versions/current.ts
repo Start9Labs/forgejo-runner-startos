@@ -1,21 +1,36 @@
-import { VersionInfo, IMPOSSIBLE } from '@start9labs/start-sdk'
+import { VersionInfo, IMPOSSIBLE, FileHelper, z } from '@start9labs/start-sdk'
+import { storeJson } from '../fileModels/store.json'
+import { sdk } from '../sdk'
+
+const legacyStore = FileHelper.json(
+  { base: sdk.volumes.main, subpath: './store.json' },
+  z.looseObject({
+    virtualization: z.boolean().optional(),
+    execution: z.string().optional(),
+  }),
+)
 
 export const current = VersionInfo.of({
-  version: '13.2.2:1',
+  version: '13.2.2:2',
   releaseNotes: {
     en_US:
-      'Requires StartOS 0.4.2 or later. Configure now rejects labels containing quotes or backslashes, and stores labels and the token exactly as entered.',
+      'Jobs can now run in disposable VMs on a remote Incus server. Configure replaces the Virtualization switch with an Execution choice: Local VMs, Local containers or Remote Incus. Existing settings keep their mode.',
     es_ES:
-      'Requiere StartOS 0.4.2 o posterior. Configurar ahora rechaza etiquetas que contienen comillas o barras invertidas, y guarda las etiquetas y el token exactamente como se introducen.',
+      'Los trabajos ahora pueden ejecutarse en máquinas virtuales desechables en un servidor Incus remoto. Configurar sustituye el interruptor Virtualización por una opción de Ejecución: VM locales, Contenedores locales o Incus remoto. La configuración existente conserva su modo.',
     de_DE:
-      'Erfordert StartOS 0.4.2 oder neuer. Konfigurieren lehnt jetzt Labels mit Anführungszeichen oder Backslashes ab und speichert Labels und Token genau wie eingegeben.',
+      'Jobs können jetzt in Einweg-VMs auf einem entfernten Incus-Server laufen. Konfigurieren ersetzt den Schalter Virtualisierung durch eine Auswahl unter Ausführung: Lokale VMs, Lokale Container oder Entferntes Incus. Bestehende Einstellungen behalten ihren Modus.',
     pl_PL:
-      'Wymaga StartOS 0.4.2 lub nowszego. Konfiguracja odrzuca teraz etykiety zawierające cudzysłowy lub ukośniki wsteczne, a etykiety i token zapisuje dokładnie tak, jak zostały wpisane.',
+      'Zadania mogą teraz działać w jednorazowych maszynach wirtualnych na zdalnym serwerze Incus. Konfiguracja zastępuje przełącznik Wirtualizacja wyborem Wykonanie: Lokalne VM, Lokalne kontenery lub Zdalny Incus. Istniejące ustawienia zachowują swój tryb.',
     fr_FR:
-      'Nécessite StartOS 0.4.2 ou une version ultérieure. Configurer refuse désormais les libellés contenant des guillemets ou des barres obliques inverses, et enregistre les libellés et le jeton exactement tels que saisis.',
+      "Les tâches peuvent désormais s'exécuter dans des VM jetables sur un serveur Incus distant. Configurer remplace l'interrupteur Virtualisation par un choix d'Exécution : VM locales, Conteneurs locaux ou Incus distant. Les réglages existants conservent leur mode.",
   },
   migrations: {
-    up: async () => {},
+    up: async ({ effects }) => {
+      const store = await legacyStore.read().once()
+      if (store && !store.execution && store.virtualization === false) {
+        await storeJson.merge(effects, { execution: 'container' })
+      }
+    },
     down: IMPOSSIBLE,
   },
 })

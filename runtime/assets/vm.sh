@@ -1,12 +1,8 @@
 #!/bin/bash
 : "${VM_CPU_CORES:?}"
-VM_DOCKER_PORT=${VM_DOCKER_PORT:-23750}
-VM_QEMU_PID=
-source /usr/local/libexec/runner-docker-client.sh
-export DOCKER_HOST=tcp://127.0.0.1:$VM_DOCKER_PORT
-export DOCKER_TLS_VERIFY=1
-export DOCKER_CERT_PATH=/data/tls/client
-unset DOCKER_CONTEXT DOCKER_API_VERSION
+VM_BACKEND_LIB=/usr/local/libexec/runner-vm.sh
+source /usr/local/libexec/runner-guest.sh
+POOL_COMMAND=(python3 -B /usr/local/bin/vm-pool.py)
 
 vm_arch() {
   case "$(uname -m)" in
@@ -16,40 +12,21 @@ vm_arch() {
   esac
 }
 
-vm_issue_certificate() {
-  local name=$1 usage=$2
-  mkdir -p "/data/tls/$name"
-  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "/data/tls/$name/key.pem"
-  openssl req -new -key "/data/tls/$name/key.pem" -subj "/CN=runner-vm-$name" -out "/data/tls/$name/request.pem"
-  printf 'basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=%s\nsubjectAltName=IP:127.0.0.1\n' "$usage" > "/data/tls/$name/extensions"
-  openssl x509 -req -in "/data/tls/$name/request.pem" -CA /data/tls/ca.pem -CAkey /data/tls/ca.key -CAcreateserial -days 365 -extfile "/data/tls/$name/extensions" -out "/data/tls/$name/cert.pem"
-  cp /data/tls/ca.pem "/data/tls/$name/ca.pem"
-  rm "/data/tls/$name/request.pem" "/data/tls/$name/extensions"
+vm_create_disk() {
+  local base=$1 disk_gb=$2 user_data=$3
+  mkdir -p /vm /data
+  rm -f /vm/root.qcow2 /vm/seed.iso /vm/vars.fd
+  rm -rf /vm/seed-input
+  mkdir -p /vm/seed-input
+  qemu-img create -f qcow2 -F qcow2 -b "$base" /vm/root.qcow2 "${disk_gb}G"
+  cp "$user_data" /vm/seed-input/user-data
+  printf 'instance-id: runner-%s\nlocal-hostname: %s\n' "$(cat /proc/sys/kernel/random/uuid)" "${VM_GUEST_HOSTNAME:-runner-job}" > /vm/seed-input/meta-data
+  genisoimage -quiet -output /vm/seed.iso -volid cidata -joliet -rock /vm/seed-input/user-data /vm/seed-input/meta-data
 }
 
-vm_boot() {
-  local base=$1 disk_gb=$2 template=$3 guest_hostname=${VM_GUEST_HOSTNAME:-runner-job}
-  mkdir -p /vm /data
-  printf 'booting\n' > /vm/phase
-  rm -f /vm/root.qcow2 /vm/seed.iso /vm/qemu.pid /vm/qmp.sock /vm/vars.fd
-  rm -rf /data/tls /vm/seed-input
-  mkdir -p /data/tls /vm/seed-input
-  qemu-img create -f qcow2 -F qcow2 -b "$base" /vm/root.qcow2 "${disk_gb}G"
-  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out /data/tls/ca.key
-  openssl req -new -x509 -key /data/tls/ca.key -days 365 -subj /CN=runner-vm-ca -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign' -out /data/tls/ca.pem
-  vm_issue_certificate server serverAuth
-  vm_issue_certificate client clientAuth
-  rm /data/tls/ca.key
-  sed \
-    -e "s|@STARTOS_ROOT_CA@|$(base64 -w0 "${RUNNER_ROOT_CA:?}")|g" \
-    -e "s|@TLS_CA@|$(base64 -w0 /data/tls/ca.pem)|g" \
-    -e "s|@TLS_SERVER_CERT@|$(base64 -w0 /data/tls/server/cert.pem)|g" \
-    -e "s|@TLS_SERVER_KEY@|$(base64 -w0 /data/tls/server/key.pem)|g" \
-    -e "s|@GUEST_HOSTNAME@|$guest_hostname|g" \
-    "$template" > /vm/seed-input/user-data
-  printf 'instance-id: runner-%s\nlocal-hostname: %s\n' "$(cat /proc/sys/kernel/random/uuid)" "$guest_hostname" > /vm/seed-input/meta-data
-  genisoimage -quiet -output /vm/seed.iso -volid cidata -joliet -rock /vm/seed-input/user-data /vm/seed-input/meta-data
+vm_start() {
   local -a machine
+  rm -f /vm/qmp.sock
   case "$(vm_arch)" in
     amd64) machine=(qemu-system-x86_64 -machine pc) ;;
     arm64)
@@ -63,45 +40,81 @@ vm_boot() {
     -drive file=/vm/seed.iso,format=raw,media=cdrom,readonly=on \
     -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$VM_DOCKER_PORT-:2376" \
     -display none -serial file:/vm/serial.log -monitor none \
-    -qmp unix:/vm/qmp.sock,server=on,wait=off -pidfile /vm/qemu.pid -no-reboot &
-  VM_QEMU_PID=$!
-}
-
-vm_wait_ready() {
-  local deadline=$((SECONDS + 300))
-  while ((SECONDS < deadline)); do
-    kill -0 "$VM_QEMU_PID"
-    if curl -fsS --max-time 3 --cacert "$DOCKER_CERT_PATH/ca.pem" --cert "$DOCKER_CERT_PATH/cert.pem" --key "$DOCKER_CERT_PATH/key.pem" "https://127.0.0.1:$VM_DOCKER_PORT/_ping" >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  printf 'failed\n' > /vm/phase
-  echo 'Guest Docker did not become ready' >&2
-  return 1
-}
-
-vm_terminate_process() {
-  local pid=$1 attempt
-  kill -- "$pid" 2>/dev/null || true
-  for ((attempt=0; attempt<50; attempt++)); do
-    if ! kill -0 -- "$pid" 2>/dev/null; then break; fi
-    sleep 0.1
-  done
-  kill -KILL -- "$pid" 2>/dev/null || true
-}
-
-vm_stop() {
-  if [ -n "$VM_QEMU_PID" ]; then
-    vm_terminate_process "$VM_QEMU_PID"
-    wait "$VM_QEMU_PID" 2>/dev/null || true
-    VM_QEMU_PID=
-  fi
-  rm -f /vm/qemu.pid /vm/qmp.sock
+    -qmp unix:/vm/qmp.sock,server=on,wait=off -no-reboot &
+  guest_record_pid "$!"
 }
 
 vm_dispose() {
-  vm_stop
-  rm -f /vm/root.qcow2 /vm/seed.iso /vm/vars.fd
-  rm -rf /data/tls /vm/seed-input
+  vm_stop_process
+  rm -f /vm/qmp.sock /vm/root.qcow2 /vm/seed.iso /vm/vars.fd
+  rm -rf /data/tls /data/user-data /vm/seed-input
+}
+
+guest_worker_init() {
+  : "${VM_DISK_GB:?}" "${VM_POOL_MEMORY_MB:?}" "${VM_BOOT_MEMORY_MB:?}" "${VM_MEMORY_BLOCK_MB:?}" "${VM_MEMORY_DEVICE_ID:?}"
+  VM_MEMORY_ARGS=(-m "${VM_BOOT_MEMORY_MB}M,maxmem=${VM_POOL_MEMORY_MB}M,slots=1"
+    -object "memory-backend-ram,id=pool-memory,size=$((VM_POOL_MEMORY_MB-VM_BOOT_MEMORY_MB))M"
+    -device "virtio-mem-pci,id=$VM_MEMORY_DEVICE_ID,memdev=pool-memory,requested-size=0,block-size=${VM_MEMORY_BLOCK_MB}M")
+  guest_recover qemu-system
+}
+
+guest_worker_wait() {
+  local deadline=$((SECONDS + 30))
+  until "${POOL_COMMAND[@]}" status >/dev/null 2>&1; do
+    if ((SECONDS >= deadline)); then echo 'Memory controller did not become ready' >&2; return 1; fi
+    sleep 0.2
+  done
+}
+
+guest_reserve() { "${POOL_COMMAND[@]}" acquire > /vm/grant.json; }
+guest_launch() {
+  guest_user_data /usr/local/share/runner-guest-cloud-init.yaml /data/user-data
+  vm_create_disk /base/prepared.qcow2 "$VM_DISK_GB" /data/user-data
+}
+guest_connect() { vm_start; }
+guest_started() { "${POOL_COMMAND[@]}" started > /vm/grant.json; }
+guest_release() { "${POOL_COMMAND[@]}" release; }
+
+guest_image_current() {
+  VM_PREPARED_FINGERPRINT=$(guest_fingerprint "$(vm_arch)")
+  [ -f /cache/prepared.qcow2 ] && [ "$(cat /cache/prepared.id 2>/dev/null)" = "$VM_PREPARED_FINGERPRINT" ]
+}
+
+guest_prepare_launch() {
+  VM_MEMORY_ARGS=(-m "${VM_MEMORY_MB:?}")
+  local arch images=/usr/local/share/runner-guest-images.json release expected base_url image
+  arch=$(vm_arch)
+  release=$(jq -r .release "$images")
+  expected=$(jq -r --arg arch "$arch" '.sha512[$arch]' "$images")
+  base_url=$(jq -r .baseUrl "$images")
+  image=/cache/cloud-$arch.qcow2
+  if [ ! -f "$image" ] || ! printf '%s  %s\n' "$expected" "$image" | sha512sum --check --status; then
+    curl --fail --location --retry 3 --output "$image.tmp" "$base_url/$release/debian-13-genericcloud-$arch-$release.qcow2"
+    printf '%s  %s\n' "$expected" "$image.tmp" | sha512sum --check --status
+    mv "$image.tmp" "$image"
+  fi
+  guest_preparation_user_data /usr/local/share/runner-guest-cloud-init.yaml /data/prepare-user-data
+  vm_create_disk "$image" 8 /data/prepare-user-data
+  vm_start
+}
+
+guest_wait_poweroff() {
+  local attempt
+  for ((attempt=0; attempt<60; attempt++)); do
+    if ! kill -0 "$VM_GUEST_PID" 2>/dev/null; then break; fi
+    sleep 1
+  done
+  if kill -0 "$VM_GUEST_PID" 2>/dev/null; then
+    echo 'Guest did not power off after image preparation' >&2
+    return 1
+  fi
+  wait "$VM_GUEST_PID"
+  VM_GUEST_PID=
+  rm -f /vm/guest.pid
+}
+
+guest_image_publish() {
+  qemu-img convert -f qcow2 -O qcow2 /vm/root.qcow2 /cache/prepared.qcow2.tmp
+  mv /cache/prepared.qcow2.tmp /cache/prepared.qcow2
+  printf '%s' "$VM_PREPARED_FINGERPRINT" > /cache/prepared.id
 }

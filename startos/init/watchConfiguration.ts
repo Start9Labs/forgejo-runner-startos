@@ -22,14 +22,18 @@ export const watchConfiguration = sdk.setupOnInit(async (effects) => {
   }
   try {
     runnerLabels(store)
-    if (
-      runnerBackend(
-        store.virtualization,
-        await virtualizationAvailable(effects),
-      ) === 'vm'
-    ) {
+    const backend = runnerBackend(
+      store.execution,
+      await virtualizationAvailable(effects),
+    )
+    if (backend === 'vm') {
       vmResources(store.capacity)
       await vmDiskSize(effects, store.capacity)
+    }
+    if (backend === 'incus' && !store.incus.fingerprint) {
+      throw new Error(
+        i18n('Enter a trust token to connect this runner to the Incus server'),
+      )
     }
   } catch (error) {
     if (!(error instanceof Error)) throw error

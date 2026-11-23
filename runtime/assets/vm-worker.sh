@@ -1,20 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 umask 077
-source /usr/local/libexec/runner-vm.sh
-: "${VM_DISK_GB:?}"
-: "${VM_POOL_MEMORY_MB:?}"
-: "${VM_BOOT_MEMORY_MB:?}"
-: "${VM_MEMORY_BLOCK_MB:?}"
-: "${VM_MEMORY_DEVICE_ID:?}"
 : "${VM_SLOT:?}"
-VM_MEMORY_ARGS=(-m "${VM_BOOT_MEMORY_MB}M,maxmem=${VM_POOL_MEMORY_MB}M,slots=1"
-  -object "memory-backend-ram,id=pool-memory,size=$((VM_POOL_MEMORY_MB-VM_BOOT_MEMORY_MB))M"
-  -device "virtio-mem-pci,id=$VM_MEMORY_DEVICE_ID,memdev=pool-memory,requested-size=0,block-size=${VM_MEMORY_BLOCK_MB}M")
+source /usr/local/libexec/runner-backend.sh
 runner_pid=
 step_pid=
 stopping=false
-POOL_COMMAND=(python3 -B /usr/local/bin/vm-pool.py)
 stop_runner() {
   if [ -n "$runner_pid" ]; then
     vm_terminate_process "-$runner_pid"
@@ -28,7 +19,7 @@ dispose_job() {
   if [ -f /vm/lease ]; then
     export VM_LEASE="$(cat /vm/lease)"
     rm /vm/lease
-    "${POOL_COMMAND[@]}" release
+    guest_release
   fi
   rm -f /vm/request /vm/request.tmp /vm/grant.json
 }
@@ -51,7 +42,7 @@ cleanup() {
 wait_stage() {
   local stage=$1 completed_pid
   local -a children=("$runner_pid" "$stage")
-  if [ -n "$VM_QEMU_PID" ]; then children+=("$VM_QEMU_PID"); fi
+  if [ -n "$VM_GUEST_PID" ]; then children+=("$VM_GUEST_PID"); fi
   step_pid=$stage
   if wait -n -p completed_pid "${children[@]}"; then status=0; else status=$?; fi
   if [ "${completed_pid:-}" != "$stage" ]; then return 1; fi
@@ -60,19 +51,12 @@ wait_stage() {
 }
 mkdir -p /data/runner/run /vm
 if [ -f /vm/runner.pgid ]; then runner_pid=$(cat /vm/runner.pgid); stop_runner; fi
-if [ -f /vm/qemu.pid ]; then
-  old=$(cat /vm/qemu.pid)
-  if [[ "$old" =~ ^[0-9]+$ ]] && grep -q '^qemu-system' "/proc/$old/comm" 2>/dev/null; then VM_QEMU_PID=$old; fi
-fi
+guest_worker_init
 dispose_job || true
 trap cleanup EXIT
 trap 'stopping=true; exit 143' TERM INT
 printf '%s' "$$" > /vm/controller.pid
-deadline=$((SECONDS + 30))
-until "${POOL_COMMAND[@]}" status >/dev/null 2>&1; do
-  if ((SECONDS >= deadline)); then echo 'Memory controller did not become ready' >&2; exit 1; fi
-  sleep 0.2
-done
+guest_worker_wait
 while true; do
   export VM_LEASE="$(cat /proc/sys/kernel/random/uuid)"
   printf '%s' "$VM_LEASE" > /vm/lease
@@ -86,22 +70,25 @@ while true; do
   done
   test "$(cat /vm/request)" = "$VM_LEASE"
   printf 'budget\n' > /vm/phase
-  "${POOL_COMMAND[@]}" acquire > /vm/grant.json &
+  guest_reserve &
   wait_stage "$!"
-  vm_boot /base/prepared.qcow2 "$VM_DISK_GB" /usr/local/share/runner-guest-cloud-init.yaml
-  bash -ec 'source /usr/local/libexec/runner-vm.sh; VM_QEMU_PID=$1; vm_wait_ready' vm-ready "$VM_QEMU_PID" &
+  printf 'booting\n' > /vm/phase
+  guest_launch &
   wait_stage "$!"
-  "${POOL_COMMAND[@]}" started > /vm/grant.json &
+  guest_connect
+  vm_wait_ready &
+  wait_stage "$!"
+  guest_started &
   wait_stage "$!"
   if [ "${RUNNER_EMULATION:-false}" = true ]; then
     docker run --rm --privileged "$(cat /usr/local/share/binfmt-image)" --install all &
     wait_stage "$!"
   fi
   printf 'ready\n' > /vm/phase
-  kill -0 "$VM_QEMU_PID"
-  if wait -n -p completed_pid "$runner_pid" "$VM_QEMU_PID"; then status=0; else status=$?; fi
+  kill -0 "$VM_GUEST_PID"
+  if wait -n -p completed_pid "$runner_pid" "$VM_GUEST_PID"; then status=0; else status=$?; fi
   if [ "${completed_pid:-}" != "$runner_pid" ]; then
-    VM_QEMU_PID=
+    VM_GUEST_PID=
     echo 'Guest exited before the job worker completed' >&2
     exit 1
   fi
@@ -109,5 +96,5 @@ while true; do
   if [ "$status" -ne 0 ]; then exit "$status"; fi
   printf 'recycling\n' > /vm/phase
   dispose_job
-  echo 'Job VM disposed and memory lease returned'
+  echo 'Job VM disposed'
 done
