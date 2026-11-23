@@ -178,7 +178,10 @@ export function guestDiskGiB(availableMiB: number, capacity: number) {
   return Number.isFinite(diskGiB) && diskGiB >= 8 ? diskGiB : 0
 }
 
-/** Rejects host execution and ambiguous routing labels. */
+/**
+ * Rejects host execution and ambiguous routing labels.
+ * Emulation labels use the execution server's architecture, not the controller's.
+ */
 export function resolveRunnerLabels(
   settings: { labels: string; emulation: boolean },
   architecture = arch(),

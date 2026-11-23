@@ -8,6 +8,7 @@ import {
   virtualizationAvailable,
   vmResources,
   vmDiskSize,
+  incusArchitecture,
 } from '../utils'
 
 export const watchConfiguration = sdk.setupOnInit(async (effects) => {
@@ -20,8 +21,15 @@ export const watchConfiguration = sdk.setupOnInit(async (effects) => {
     })
     return
   }
+  const architecture =
+    store.execution === 'incus' &&
+    store.incus.fingerprint &&
+    store.incus.connectionId
+      ? await incusArchitecture(effects, store.incus.connectionId).catch(
+          () => null,
+        )
+      : undefined
   try {
-    runnerLabels(store)
     const backend = runnerBackend(
       store.execution,
       await virtualizationAvailable(effects),
@@ -30,11 +38,16 @@ export const watchConfiguration = sdk.setupOnInit(async (effects) => {
       vmResources(store.capacity)
       await vmDiskSize(effects, store.capacity)
     }
-    if (backend === 'incus' && !store.incus.fingerprint) {
+    if (
+      backend === 'incus' &&
+      (!store.incus.fingerprint || !store.incus.connectionId)
+    ) {
       throw new Error(
         i18n('Enter a trust token to connect this runner to the Incus server'),
       )
     }
+    // An unreachable Incus server skips this check; main validates labels at start.
+    if (architecture !== null) runnerLabels(store, architecture)
   } catch (error) {
     if (!(error instanceof Error)) throw error
     await sdk.action.createOwnTask(effects, configure, 'critical', {

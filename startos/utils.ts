@@ -31,7 +31,11 @@ export const RUNTIME_DIR = `${SCRATCH_DIR}/run`
 export const DOCKER_HOST = `unix://${RUNTIME_DIR}/docker.sock`
 export const INCUS_DIR = '/incus'
 export const INCUS_SUBPATH = './incus'
-const INCUS_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/
+export const INCUS_NAME_PATTERN = '[A-Za-z0-9][A-Za-z0-9_.-]*'
+const INCUS_NAME = new RegExp(`^${INCUS_NAME_PATTERN}$`)
+type IncusSubcontainer = Parameters<
+  Parameters<typeof sdk.SubContainer.withTemp>[4]
+>[0]
 export type Execution = 'vm' | 'container' | 'incus'
 export type RunnerSettings = {
   labels: string
@@ -124,22 +128,28 @@ export function incusName(value: string) {
   return !value || INCUS_NAME.test(value)
 }
 
+function incusConnectionSubpath(connectionId: string) {
+  if (!/^[a-f0-9]{64}$/.test(connectionId)) {
+    throw new Error(
+      i18n('Enter a trust token to connect this runner to the Incus server'),
+    )
+  }
+  return `${INCUS_SUBPATH}/${connectionId}`
+}
+
 function incusSubcontainer<T>(
   effects: Parameters<typeof sdk.SubContainer.of>[0],
   readonly: boolean,
   name: string,
-  fn: (
-    subcontainer: Parameters<
-      Parameters<typeof sdk.SubContainer.withTemp>[4]
-    >[0],
-  ) => Promise<T>,
+  fn: (subcontainer: IncusSubcontainer) => Promise<T>,
+  subpath = INCUS_SUBPATH,
 ) {
   return sdk.SubContainer.withTemp(
     effects,
     { imageId: 'main' },
     sdk.Mounts.of().mountVolume({
       volumeId: 'main',
-      subpath: INCUS_SUBPATH,
+      subpath,
       mountpoint: INCUS_DIR,
       readonly,
     }),
@@ -150,24 +160,35 @@ function incusSubcontainer<T>(
 
 /**
  * Trusts this runner's client certificate on the Incus server and returns the
- * pinned server certificate's SHA-256 fingerprint. Without a token, keeps the
- * existing trust and only repoints its address.
+ * pinned server fingerprint, immutable connection ID and server architecture.
+ * Without a token, keeps the existing trust and only repoints its address.
+ * Retained connections let restarted workers dispose guests on their original server.
  */
 export async function enrollIncus(
   effects: Parameters<typeof sdk.SubContainer.of>[0],
-  settings: { url: string; token: string; project: string },
+  settings: {
+    url: string
+    token: string
+    project: string
+    connectionId: string
+  },
 ) {
-  const result = await incusSubcontainer(
+  if (settings.connectionId) incusConnectionSubpath(settings.connectionId)
+  return incusSubcontainer(
     effects,
     false,
     'incus-enrollment',
     async (subcontainer) => {
-      await subcontainer.execFail(['mkdir', '-p', INCUS_DIR], { user: 'root' })
-      return subcontainer.exec(
+      const stagedDir = '/run/incus-enrollment'
+      const result = await subcontainer.exec(
         [
           'bash',
-          '-ec',
-          `export INCUS_CONF=${INCUS_DIR}
+          '-euc',
+          `set -o pipefail
+export INCUS_CONF=${stagedDir}
+umask 077
+mkdir -p "$INCUS_CONF"
+if [ -n "$CURRENT" ]; then cp -a "$CURRENT/." "$INCUS_CONF/"; fi
 if [ -n "$TOKEN" ]; then
   if [ -n "$URL" ]; then
     TOKEN=$(printf '%s' "$TOKEN" | base64 -d | jq -c --arg address "\${URL#https://}" '.addresses = [$address]' | base64 -w0)
@@ -176,14 +197,13 @@ if [ -n "$TOKEN" ]; then
   incus remote add pending "$TOKEN" --project "$PROJECT" </dev/null
   incus remote remove runner >/dev/null 2>&1 || true
   incus remote rename pending runner
-elif ! test -s ${INCUS_DIR}/servercerts/runner.crt; then
+elif ! test -s "$INCUS_CONF/servercerts/runner.crt"; then
   echo 'NOT_ENROLLED'; exit 3
 elif [ -n "$URL" ]; then
   incus remote set-url runner "$URL"
 fi
 incus query runner:/1.0 </dev/null | jq -e '.auth == "trusted"' >/dev/null
-incus query "runner:/1.0/projects/$PROJECT" </dev/null >/dev/null
-openssl x509 -in ${INCUS_DIR}/servercerts/runner.crt -noout -fingerprint -sha256 | cut -d= -f2`,
+incus query "runner:/1.0/projects/$PROJECT" </dev/null >/dev/null`,
         ],
         {
           user: 'root',
@@ -192,26 +212,53 @@ openssl x509 -in ${INCUS_DIR}/servercerts/runner.crt -noout -fingerprint -sha256
             TOKEN: settings.token,
             URL: settings.url,
             PROJECT: settings.project,
+            CURRENT: settings.connectionId
+              ? `${INCUS_DIR}/${settings.connectionId}`
+              : '',
           },
         },
       )
+      if (result.exitCode === 3) {
+        throw new Error(
+          i18n(
+            'Enter a trust token to connect this runner to the Incus server',
+          ),
+        )
+      }
+      if (result.exitCode !== 0) {
+        throw new Error(
+          `${i18n('Could not connect to the Incus server')}: ${String(result.stderr).trim()}`,
+        )
+      }
+      const architecture = await readIncusArchitecture(subcontainer, stagedDir)
+      const published = await subcontainer.execFail(
+        [
+          'bash',
+          '-euc',
+          `set -o pipefail
+cd ${stagedDir}
+connection=$(sha256sum config.yml client.crt servercerts/runner.crt | sha256sum | cut -d' ' -f1)
+if [ ! -d "${INCUS_DIR}/$connection" ]; then
+  cp -a . "${INCUS_DIR}/.$connection-$$"
+  mv -T "${INCUS_DIR}/.$connection-$$" "${INCUS_DIR}/$connection"
+fi
+openssl x509 -in servercerts/runner.crt -noout -fingerprint -sha256 | cut -d= -f2
+printf '%s' "$connection"`,
+        ],
+        { user: 'root', timeout: 5000 },
+      )
+      const [fingerprint, connectionId] = String(published.stdout)
+        .trim()
+        .split('\n')
+      incusConnectionSubpath(connectionId)
+      return { fingerprint, connectionId, architecture }
     },
   )
-  if (result.exitCode === 3) {
-    throw new Error(
-      i18n('Enter a trust token to connect this runner to the Incus server'),
-    )
-  }
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `${i18n('Could not connect to the Incus server')}: ${String(result.stderr).trim()}`,
-    )
-  }
-  return String(result.stdout).trim()
 }
 
 /** Guest backend settings consumed by `runtime/assets/incus.sh`. */
 export function incusEnv(settings: {
+  connectionId: string
   project: string
   profile: string
   storagePool: string
@@ -223,6 +270,7 @@ export function incusEnv(settings: {
   return {
     VM_BACKEND: 'incus',
     INCUS_NAME_PREFIX: 'forgejo-runner',
+    INCUS_CONNECTION_ID: settings.connectionId,
     INCUS_PROJECT: settings.project,
     INCUS_PROFILE: settings.profile,
     INCUS_STORAGE_POOL: settings.storagePool,
@@ -233,24 +281,17 @@ export function incusEnv(settings: {
   }
 }
 
-/** The Incus server's CPU architecture, in Node's `os.arch()` naming. */
-export async function incusArchitecture(
-  effects: Parameters<typeof sdk.SubContainer.of>[0],
-  project: string,
+async function readIncusArchitecture(
+  subcontainer: IncusSubcontainer,
+  configDir: string,
 ) {
-  const result = await incusSubcontainer(
-    effects,
-    true,
-    'incus-architecture',
-    (subcontainer) =>
-      subcontainer.exec(
-        [
-          'sh',
-          '-ec',
-          `INCUS_CONF=${INCUS_DIR} incus query runner:/1.0 </dev/null | jq -er .environment.kernel_architecture`,
-        ],
-        { user: 'root', timeout: 30000, env: { PROJECT: project } },
-      ),
+  const result = await subcontainer.exec(
+    [
+      'bash',
+      '-ec',
+      'set -o pipefail; incus query runner:/1.0 </dev/null | jq -er .environment.kernel_architecture',
+    ],
+    { user: 'root', timeout: 30000, env: { INCUS_CONF: configDir } },
   )
   if (result.exitCode !== 0) {
     throw new Error(
@@ -259,6 +300,20 @@ export async function incusArchitecture(
   }
   const kernel = String(result.stdout).trim()
   return kernel === 'aarch64' ? 'arm64' : kernel === 'x86_64' ? 'x64' : kernel
+}
+
+/** The Incus server's CPU architecture, in Node's `os.arch()` naming. */
+export function incusArchitecture(
+  effects: Parameters<typeof sdk.SubContainer.of>[0],
+  connectionId: string,
+) {
+  return incusSubcontainer(
+    effects,
+    true,
+    'incus-architecture',
+    (subcontainer) => readIncusArchitecture(subcontainer, INCUS_DIR),
+    incusConnectionSubpath(connectionId),
+  )
 }
 
 export async function virtualizationAvailable(

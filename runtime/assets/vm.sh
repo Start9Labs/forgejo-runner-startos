@@ -2,6 +2,7 @@
 : "${VM_CPU_CORES:?}"
 VM_BACKEND_LIB=/usr/local/libexec/runner-vm.sh
 source /usr/local/libexec/runner-guest.sh
+guest_recover qemu-system
 POOL_COMMAND=(python3 -B /usr/local/bin/vm-pool.py)
 
 vm_arch() {
@@ -55,7 +56,6 @@ guest_worker_init() {
   VM_MEMORY_ARGS=(-m "${VM_BOOT_MEMORY_MB}M,maxmem=${VM_POOL_MEMORY_MB}M,slots=1"
     -object "memory-backend-ram,id=pool-memory,size=$((VM_POOL_MEMORY_MB-VM_BOOT_MEMORY_MB))M"
     -device "virtio-mem-pci,id=$VM_MEMORY_DEVICE_ID,memdev=pool-memory,requested-size=0,block-size=${VM_MEMORY_BLOCK_MB}M")
-  guest_recover qemu-system
 }
 
 guest_worker_wait() {

@@ -54,7 +54,7 @@ export const main = sdk.setupMain(async ({ effects }) => {
     RUNNER_LABELS: runnerLabels(
       store,
       backend === 'incus'
-        ? await incusArchitecture(effects, store.incus.project)
+        ? await incusArchitecture(effects, store.incus.connectionId)
         : undefined,
     ).join(','),
     RUNNER_PRIVILEGED: 'true',

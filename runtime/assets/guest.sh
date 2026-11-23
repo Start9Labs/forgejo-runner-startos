@@ -34,6 +34,7 @@ guest_user_data() {
     -e "s|@TLS_SERVER_CERT@|$(base64 -w0 /data/tls/server/cert.pem)|g" \
     -e "s|@TLS_SERVER_KEY@|$(base64 -w0 /data/tls/server/key.pem)|g" \
     -e "s|@GUEST_HOSTNAME@|$guest_hostname|g" \
+    -e "s|@DOCKER_LISTEN_ADDRESS@|${VM_DOCKER_LISTEN_ADDRESS:-0.0.0.0}|g" \
     "$template" > "$output"
   rm -rf /data/tls/server
 }

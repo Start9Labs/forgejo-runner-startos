@@ -52,11 +52,11 @@ wait_stage() {
 mkdir -p /data/runner/run /vm
 if [ -f /vm/runner.pgid ]; then runner_pid=$(cat /vm/runner.pgid); stop_runner; fi
 guest_worker_init
-dispose_job || true
 trap cleanup EXIT
 trap 'stopping=true; exit 143' TERM INT
 printf '%s' "$$" > /vm/controller.pid
 guest_worker_wait
+dispose_job
 while true; do
   export VM_LEASE="$(cat /proc/sys/kernel/random/uuid)"
   printf '%s' "$VM_LEASE" > /vm/lease

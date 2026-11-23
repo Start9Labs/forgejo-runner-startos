@@ -14,6 +14,7 @@ trap finish_preparation EXIT
 trap 'exit 143' TERM INT
 mkdir -p /cache /vm /data
 record_preparation loading
+vm_dispose
 if guest_image_current; then
   echo 'Prepared guest image is current'
   exit 0

@@ -1,6 +1,6 @@
 import { i18n } from '../i18n'
 import { sdk } from '../sdk'
-import { storeJson } from '../fileModels/store.json'
+import { incusDefaults, storeJson } from '../fileModels/store.json'
 import {
   runnerInput,
   runnerLabels,
@@ -12,13 +12,13 @@ import {
   incusAddress,
   incusName,
   enrollIncus,
-  incusArchitecture,
+  INCUS_NAME_PATTERN,
 } from '../utils'
 
 const { Value, Variants, InputSpec } = sdk
 
 const incusNamePattern = {
-  regex: '[A-Za-z0-9][A-Za-z0-9_.-]*',
+  regex: INCUS_NAME_PATTERN,
   description: i18n(
     'Must start with a letter or digit and contain only letters, digits, dots, dashes and underscores',
   ),
@@ -47,7 +47,7 @@ const incusSpec = InputSpec.of({
     name: i18n('Project'),
     description: i18n('The Incus project that holds job VMs and images.'),
     required: true,
-    default: 'default',
+    default: incusDefaults.project,
     patterns: [incusNamePattern],
   }),
   profile: Value.text({
@@ -56,7 +56,7 @@ const incusSpec = InputSpec.of({
       'The Incus profile applied to job VMs. It must provide a root disk and a network with outbound internet access.',
     ),
     required: true,
-    default: 'default',
+    default: incusDefaults.profile,
     patterns: [incusNamePattern],
   }),
   storagePool: Value.text({
@@ -80,7 +80,7 @@ const incusSpec = InputSpec.of({
   cpuCores: Value.number({
     name: i18n('CPU Cores per Job'),
     required: true,
-    default: 2,
+    default: incusDefaults.cpuCores,
     min: 1,
     max: 256,
     integer: true,
@@ -88,7 +88,7 @@ const incusSpec = InputSpec.of({
   memoryGiB: Value.number({
     name: i18n('Memory per Job'),
     required: true,
-    default: 4,
+    default: incusDefaults.memoryGiB,
     min: 1,
     max: 1024,
     integer: true,
@@ -97,7 +97,7 @@ const incusSpec = InputSpec.of({
   diskGiB: Value.number({
     name: i18n('Disk per Job'),
     required: true,
-    default: 32,
+    default: incusDefaults.diskGiB,
     min: 8,
     max: 4096,
     integer: true,
@@ -142,7 +142,7 @@ export const configure = sdk.Action.withInput(
   async ({ effects }) => {
     const store = await storeJson.read().once()
     if (!store) return null
-    const { fingerprint, ...incus } = store.incus
+    const { fingerprint, connectionId, ...incus } = store.incus
     const execution =
       store.execution === 'vm' && !(await virtualizationAvailable(effects))
         ? 'container'
@@ -188,18 +188,22 @@ export const configure = sdk.Action.withInput(
         throw new Error(incusNamePattern.description)
       }
       const url = incusAddress(settings.url ?? '')
-      const fingerprint = await enrollIncus(effects, {
+      const connectionId = await storeJson
+        .read((store) => store.incus.connectionId)
+        .once()
+      const { architecture, ...connection } = await enrollIncus(effects, {
         url,
         token: token?.trim() ?? '',
         project: settings.project,
+        connectionId: connectionId ?? '',
       })
-      runnerLabels(input, await incusArchitecture(effects, settings.project))
+      runnerLabels(input, architecture)
       incus = {
         ...settings,
+        ...connection,
         url,
         storagePool: settings.storagePool ?? '',
         network: settings.network ?? '',
-        fingerprint,
       }
     } else {
       runnerLabels(input)

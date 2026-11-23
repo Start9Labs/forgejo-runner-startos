@@ -1,21 +1,35 @@
 #!/bin/bash
-: "${INCUS_CPU_CORES:?}" "${INCUS_MEMORY_GIB:?}" "${INCUS_PROJECT:?}" "${INCUS_NAME_PREFIX:?}"
+: "${INCUS_CPU_CORES:?}" "${INCUS_MEMORY_GIB:?}" "${INCUS_PROJECT:?}" "${INCUS_NAME_PREFIX:?}" "${INCUS_CONNECTION_ID:?}"
 VM_BACKEND_LIB=/usr/local/libexec/runner-incus.sh
+VM_DOCKER_LISTEN_ADDRESS=127.0.0.1
 source /usr/local/libexec/runner-guest.sh
-export INCUS_CONF=/incus INCUS_PROJECT
+guest_recover socat
+export INCUS_CONF="/incus/$INCUS_CONNECTION_ID" INCUS_PROJECT
 INCUS_REMOTE=runner
 # Scopes instance and image names to this installation's client identity.
 INCUS_OWNER="$INCUS_NAME_PREFIX-$(openssl x509 -in "$INCUS_CONF/client.crt" -noout -fingerprint -sha256 | cut -d= -f2 | tr -d : | tr A-F a-f | cut -c1-8)"
 
 incus_cli() { incus --project "$INCUS_PROJECT" "$@" </dev/null; }
+incus_instances() {
+  timeout 60 env INCUS_CONF="/incus/${1:-$INCUS_CONNECTION_ID}" incus --project "${2:-$INCUS_PROJECT}" list "$INCUS_REMOTE:" --format json </dev/null
+}
 # Bounded so an instance that never stops cannot pin its slot.
-incus_delete() { timeout 120 incus --project "$INCUS_PROJECT" delete --force "$INCUS_REMOTE:$1" </dev/null; }
+incus_delete() {
+  local name=$1 connection=${2:-$INCUS_CONNECTION_ID} project=${3:-$INCUS_PROJECT} instances
+  if timeout 120 env INCUS_CONF="/incus/$connection" incus --project "$project" delete --force "$INCUS_REMOTE:$name" </dev/null; then
+    return 0
+  fi
+  instances=$(incus_instances "$connection" "$project") || return 1
+  jq -e --arg name "$name" 'type == "array" and all(.[]; .name != $name)' <<< "$instances" >/dev/null
+}
 incus_instance_status() { incus query "$INCUS_REMOTE:/1.0/instances/$1?project=$INCUS_PROJECT" </dev/null | jq -r .status; }
 
 incus_launch() {
   local image=$1 user_data=$2 name=$3
   shift 3
-  printf '%s' "$name" > /vm/instance
+  jq -n --arg name "$name" --arg connection "$INCUS_CONNECTION_ID" --arg project "$INCUS_PROJECT" \
+    '{name: $name, connectionId: $connection, project: $project}' > /vm/instance.tmp
+  mv /vm/instance.tmp /vm/instance
   local -a args=(launch --quiet "$image" "$INCUS_REMOTE:$name" --vm
     -c "cloud-init.user-data=$(cat "$user_data")"
     -c "limits.cpu=$INCUS_CPU_CORES" -c "limits.memory=${INCUS_MEMORY_GIB}GiB" "$@")
@@ -26,27 +40,31 @@ incus_launch() {
 }
 
 incus_tunnel() {
-  INCUS_INSTANCE=$(cat /vm/instance) socat "TCP-LISTEN:$VM_DOCKER_PORT,bind=127.0.0.1,reuseaddr,fork" EXEC:/usr/local/libexec/runner-incus-connect.sh 2>>/vm/tunnel.log &
+  INCUS_INSTANCE=$(jq -er .name /vm/instance) socat "TCP-LISTEN:$VM_DOCKER_PORT,bind=127.0.0.1,reuseaddr,fork" EXEC:/usr/local/libexec/runner-incus-connect.sh 2>>/vm/tunnel.log &
   guest_record_pid "$!"
 }
 
 incus_delete_prefixed() {
-  local name
-  timeout 60 incus --project "$INCUS_PROJECT" list "$INCUS_REMOTE:" --format csv --columns n </dev/null | while read -r name; do
-    if [[ "$name" == "$1"* ]]; then incus_delete "$name" || true; fi
-  done
+  local name instances names
+  instances=$(incus_instances) || return 1
+  names=$(jq -er 'map(.name) | join("\n")' <<< "$instances") || return 1
+  while read -r name; do
+    if [[ "$name" == "$1"* ]]; then incus_delete "$name" || return 1; fi
+  done <<< "$names"
 }
 
 vm_dispose() {
   vm_stop_process
-  local name
-  if name=$(cat /vm/instance 2>/dev/null); then
-    if incus_delete "$name" || ! incus_instance_status "$name" >/dev/null 2>&1; then
-      rm -f /vm/instance
-    else
+  local name connection project
+  if [ -f /vm/instance ]; then
+    name=$(jq -er .name /vm/instance) || return 1
+    connection=$(jq -er .connectionId /vm/instance) || return 1
+    project=$(jq -er .project /vm/instance) || return 1
+    if ! incus_delete "$name" "$connection" "$project"; then
       echo "Could not delete Incus instance $name" >&2
       return 1
     fi
+    rm -f /vm/instance
   fi
   rm -rf /data/tls /data/user-data /vm/tunnel.log
 }
@@ -54,10 +72,9 @@ vm_dispose() {
 guest_worker_init() {
   : "${INCUS_DISK_GIB:?}" "${VM_SLOT:?}"
   INCUS_SLOT_PREFIX="$INCUS_OWNER-s$VM_SLOT-"
-  guest_recover socat
 }
 
-guest_worker_wait() { incus_delete_prefixed "$INCUS_SLOT_PREFIX" || true; }
+guest_worker_wait() { incus_delete_prefixed "$INCUS_SLOT_PREFIX"; }
 guest_reserve() { :; }
 guest_started() { :; }
 guest_release() { :; }
@@ -78,7 +95,7 @@ guest_image_current() {
 }
 
 guest_prepare_launch() {
-  incus_delete_prefixed "$INCUS_OWNER-prepare-" || true
+  incus_delete_prefixed "$INCUS_OWNER-prepare-"
   guest_preparation_user_data /usr/local/share/runner-guest-cloud-init.yaml /data/prepare-user-data
   incus_launch "$(jq -r .incusImage /usr/local/share/runner-guest-images.json)" /data/prepare-user-data "$INCUS_OWNER-prepare-$(cut -c1-8 /proc/sys/kernel/random/uuid)"
   incus_tunnel
@@ -86,7 +103,7 @@ guest_prepare_launch() {
 
 guest_wait_poweroff() {
   local attempt name
-  name=$(cat /vm/instance)
+  name=$(jq -er .name /vm/instance)
   vm_stop_process
   for ((attempt=0; attempt<120; attempt++)); do
     if [ "$(incus_instance_status "$name")" = Stopped ]; then return 0; fi
@@ -98,7 +115,7 @@ guest_wait_poweroff() {
 
 guest_image_publish() {
   local name previous
-  name=$(cat /vm/instance)
+  name=$(jq -er .name /vm/instance)
   previous=$(cat /cache/incus-image 2>/dev/null || true)
   incus_cli image delete "$INCUS_REMOTE:$INCUS_IMAGE_ALIAS" 2>/dev/null || true
   incus_cli publish --quiet "$INCUS_REMOTE:$name" "$INCUS_REMOTE:" --alias "$INCUS_IMAGE_ALIAS"
