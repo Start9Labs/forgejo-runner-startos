@@ -163,6 +163,7 @@ function incusSubcontainer<T>(
  * pinned server fingerprint, immutable connection ID and server architecture.
  * Without a token, keeps the existing trust and only repoints its address.
  * Retained connections let restarted workers dispose guests on their original server.
+ * Alternative token addresses never delay enrollment after one responds.
  */
 export async function enrollIncus(
   effects: Parameters<typeof sdk.SubContainer.of>[0],
@@ -201,6 +202,7 @@ if [ -n "$TOKEN" ]; then
   while read -r address; do
     if failure=$(curl -sSk --max-time 10 -o /dev/null "https://$address/1.0" 2>&1); then
       REACHABLE+=("$address")
+      break
     else
       echo "https://$address: \${failure#curl: }" >&2
     fi
