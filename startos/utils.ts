@@ -120,7 +120,11 @@ export function incusAddress(address: string) {
   if (url.protocol !== 'https:' || url.pathname !== '/' || url.search) {
     throw new Error(i18n('The Incus address must be an https:// address'))
   }
-  return `https://${url.hostname}:${url.port || (hasScheme ? '443' : '8443')}`
+  // URL.port omits explicit 443; bare addresses must retain it.
+  const hasExplicitBarePort =
+    !hasScheme && /:\d+$/.test(trimmed.split(/[/?#]/, 1)[0])
+  const port = url.port || (hasScheme || hasExplicitBarePort ? '443' : '8443')
+  return `https://${url.hostname}:${port}`
 }
 
 export function incusName(value: string) {
